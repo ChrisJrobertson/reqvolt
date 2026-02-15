@@ -1,0 +1,408 @@
+// Reqvolt Prisma Schema - 21 tables
+// Database: Neon PostgreSQL 16 with pgvector
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  Admin
+  Member
+}
+
+enum SourceType {
+  MEETING_NOTES
+  CUSTOMER_FEEDBACK
+  WORKSHOP_NOTES
+  RETRO_NOTES
+  INTERVIEW_TRANSCRIPT
+  EMAIL
+  PDF
+  DOCX
+  OTHER
+}
+
+enum ExtractionQuality {
+  good
+  partial
+  failed
+}
+
+enum SourceStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum EvidenceEntityType {
+  story
+  acceptance_criteria
+}
+
+enum ConfidenceLevel {
+  high
+  medium
+  low
+}
+
+enum EvolutionStatus {
+  new
+  strengthened
+  contradicted
+  unchanged
+  removed
+}
+
+enum QARuleCode {
+  VAGUE_TERM
+  UNTESTABLE
+  OVERLOADED_AC
+  MISSING_CLAUSE
+}
+
+enum QASeverity {
+  high
+  medium
+  low
+}
+
+enum QAResolvedBy {
+  fixed
+  dismissed
+}
+
+enum PushStatus {
+  success
+  failed
+  skipped
+}
+
+enum ApprovalStatus {
+  approved
+  rejected
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   WorkspaceMember[]
+  projects  Project[]
+  auditLogs AuditLog[]
+  templates Template[]
+  glossary  GlossaryEntry[]
+  uploadSessions UploadSession[]
+  mondayConnection MondayConnection?
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole
+  email       String
+  invitedAt   DateTime      @default(now())
+  joinedAt    DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  clientName  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sources   Source[]
+  packs     Pack[]
+  @@index([workspaceId])
+}
+
+model Source {
+  id                 String            @id @default(cuid())
+  projectId          String
+  workspaceId        String
+  type               SourceType
+  name               String
+  content            String            @db.Text
+  metadata           Json?
+  extractionQuality  ExtractionQuality?
+  status             SourceStatus      @default(pending)
+  deletedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chunks  SourceChunk[]
+  @@index([projectId])
+  @@index([workspaceId])
+  @@index([deletedAt])
+}
+
+model SourceChunk {
+  id         String   @id @default(cuid())
+  sourceId   String
+  content    String   @db.Text
+  tokenCount Int      @default(0)
+  chunkIndex Int
+  embedding  Unsupported("vector(1536)")?
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  evidenceLinks EvidenceLink[]
+
+  @@index([sourceId])
+}
+
+model Pack {
+  id          String   @id @default(cuid())
+  projectId   String
+  workspaceId String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions PackVersion[]
+  @@index([projectId])
+  @@index([workspaceId])
+}
+
+model PackVersion {
+  id              String   @id @default(cuid())
+  packId          String
+  versionNumber   Int
+  sourceIds       Json     // string[]
+  summary         String?  @db.Text
+  nonGoals        String?  @db.Text
+  openQuestions   Json?
+  assumptions     Json?
+  decisions       Json?
+  risks           Json?
+  generationConfig Json?
+  changeAnalysis  Json?
+  editLockUserId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pack           Pack            @relation(fields: [packId], references: [id], onDelete: Cascade)
+  stories        Story[]
+  qaFlags        QAFlag[]
+  reviewLinks    ReviewLink[]
+  mondayPushLogs MondayPushLog[]
+  @@index([packId])
+}
+
+model Story {
+  id            String   @id @default(cuid())
+  packVersionId String
+  sortOrder     Int
+  persona       String   @db.Text
+  want          String   @db.Text
+  soThat        String   @db.Text
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  packVersion        PackVersion        @relation(fields: [packVersionId], references: [id], onDelete: Cascade)
+  acceptanceCriteria AcceptanceCriteria[]
+  storyApprovals     StoryApproval[]
+  mondayPushLogs     MondayPushLog[]
+  @@index([packVersionId])
+}
+
+model AcceptanceCriteria {
+  id            String   @id @default(cuid())
+  storyId       String
+  sortOrder     Int
+  given         String   @db.Text
+  when         String   @db.Text
+  then         String   @db.Text
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  @@index([storyId])
+}
+
+model EvidenceLink {
+  id               String           @id @default(cuid())
+  entityType       EvidenceEntityType
+  entityId         String
+  sourceChunkId    String
+  confidence       ConfidenceLevel
+  evolutionStatus  EvolutionStatus   @default(unchanged)
+  previousConfidence String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  sourceChunk SourceChunk @relation(fields: [sourceChunkId], references: [id], onDelete: Cascade)
+  @@index([entityType, entityId])
+  @@index([sourceChunkId])
+}
+
+model QAFlag {
+  id             String      @id @default(cuid())
+  packVersionId  String
+  entityType     EvidenceEntityType
+  entityId       String
+  ruleCode       QARuleCode
+  severity       QASeverity
+  message        String      @db.Text
+  suggestedFix   String?     @db.Text
+  resolvedBy     QAResolvedBy?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  packVersion PackVersion @relation(fields: [packVersionId], references: [id], onDelete: Cascade)
+  @@index([packVersionId])
+}
+
+model ReviewLink {
+  id             String    @id @default(cuid())
+  packVersionId  String
+  token          String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  viewCount      Int       @default(0)
+  lastViewedAt   DateTime?
+  createdAt      DateTime  @default(now())
+
+  packVersion PackVersion   @relation(fields: [packVersionId], references: [id], onDelete: Cascade)
+  comments   ReviewComment[]
+  @@index([packVersionId])
+  @@index([token])
+}
+
+model ReviewComment {
+  id          String    @id @default(cuid())
+  reviewLinkId String
+  entityType  EvidenceEntityType
+  entityId    String
+  content     String    @db.Text
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  reviewLink ReviewLink @relation(fields: [reviewLinkId], references: [id], onDelete: Cascade)
+  @@index([reviewLinkId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  content     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId])
+}
+
+model GlossaryEntry {
+  id          String   @id @default(cuid())
+  workspaceId String
+  term        String
+  definition  String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId])
+}
+
+model GenerationCache {
+  id        String   @id @default(cuid())
+  cacheKey  String   @unique
+  response  Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model StoryApproval {
+  id         String         @id @default(cuid())
+  storyId    String
+  approvedBy String
+  approvedAt DateTime
+  status     ApprovalStatus
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  @@index([storyId])
+}
+
+model UploadSession {
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  userId               String
+  objectKey            String
+  expectedSize         BigInt
+  expectedContentType  String
+  expiresAt            DateTime
+  consumedAt           DateTime?
+  createdAt            DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId])
+  @@index([expiresAt])
+}
+
+model MondayConnection {
+  id              String   @id @default(cuid())
+  workspaceId     String   @unique
+  mondayBoardId   String
+  mondayGroupId   String
+  fieldMapping    Json
+  accessToken     String   @db.Text
+  refreshToken    String?  @db.Text
+  connectedAt     DateTime
+  connectedBy     String
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model MondayPushLog {
+  id             String     @id @default(cuid())
+  packVersionId  String
+  storyId        String
+  mondayItemId   String
+  pushedAt       DateTime
+  pushedBy       String
+  status         PushStatus
+  errorMessage   String?    @db.Text
+
+  packVersion PackVersion @relation(fields: [packVersionId], references: [id], onDelete: Cascade)
+  story      Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  @@index([packVersionId])
+  @@index([storyId])
+}
