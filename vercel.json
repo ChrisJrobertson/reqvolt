@@ -1,0 +1,23 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "pnpm exec prisma generate && pnpm build",
+  "functions": {
+    "src/app/api/inngest/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/webhooks/inbound-email/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/v1/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    }
+  ]
+}

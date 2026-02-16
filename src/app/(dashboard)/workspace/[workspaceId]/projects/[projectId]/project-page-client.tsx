@@ -44,6 +44,9 @@ function MondayPushHistory({ projectId }: { projectId: string }) {
   );
 }
 import { AddSourceModal } from "./add-source-modal";
+import { PackHealthBadge } from "@/components/pack-editor/pack-health-badge";
+import { AttentionWidget } from "@/components/attention-widget";
+import { EmailForwardingCard } from "@/components/project/EmailForwardingCard";
 
 interface Source {
   id: string;
@@ -58,11 +61,14 @@ interface Source {
 interface Pack {
   id: string;
   name: string;
+  healthScore?: number | null;
+  healthStatus?: string | null;
 }
 
 interface Project {
   id: string;
   name: string;
+  forwardingEmail?: string | null;
   sources: Source[];
   packs: Pack[];
 }
@@ -129,8 +135,22 @@ export function ProjectPageClient({
     (s) => s.status === "completed" && s.content?.length > 0
   ) ?? [];
 
+  const recentEmailCount =
+    project?.sources.filter((s) => s.type === "EMAIL").length ?? 0;
+
   return (
     <div className="space-y-8">
+      <section>
+        <AttentionWidget workspaceId={workspaceId} projectId={projectId} />
+      </section>
+      {project?.forwardingEmail && (
+        <section>
+          <EmailForwardingCard
+            forwardingEmail={project.forwardingEmail}
+            recentEmailCount={recentEmailCount}
+          />
+        </section>
+      )}
       <section>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Sources</h2>
@@ -263,9 +283,21 @@ export function ProjectPageClient({
             <li key={pack.id}>
               <Link
                 href={`/workspace/${workspaceId}/projects/${projectId}/packs/${pack.id}`}
-                className="block p-4 border rounded-lg hover:bg-accent/50"
+                className="block p-4 border rounded-lg hover:bg-accent/50 flex items-center justify-between gap-3"
               >
-                {pack.name}
+                <span>{pack.name}</span>
+                {pack.healthScore != null && pack.healthStatus && (
+                  <PackHealthBadge
+                    score={pack.healthScore}
+                    status={
+                      pack.healthStatus as
+                        | "healthy"
+                        | "stale"
+                        | "at_risk"
+                        | "outdated"
+                    }
+                  />
+                )}
               </Link>
             </li>
           ))}

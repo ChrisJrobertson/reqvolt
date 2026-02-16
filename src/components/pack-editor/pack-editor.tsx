@@ -3,12 +3,18 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
+import { DeliveryFeedbackPanel } from "./DeliveryFeedbackPanel";
+import { TranscriptEvidenceDisplay } from "./TranscriptEvidenceDisplay";
 
 interface EvidenceLink {
   id: string;
   confidence: string;
   evolutionStatus: string;
-  sourceChunk: { content: string };
+  sourceChunk: {
+    content: string;
+    metadata?: { speaker?: string | null; timestamp?: string | null } | null;
+    source?: { id: string; name: string; type: string } | null;
+  };
 }
 
 interface Story {
@@ -513,6 +519,7 @@ export function PackEditor({
                   </button>
                 </div>
                 )}
+                <DeliveryFeedbackPanel storyId={story.id} packId={pack.id} />
               </div>
             ))}
             {!isLocked && (
@@ -627,32 +634,46 @@ export function PackEditor({
               {rightTab === "evidence" && evidenceTab && evidenceEntityId ? (
                 <div className="space-y-3">
                   <h3 className="font-medium text-sm">Evidence</h3>
-                  {currentEvidence.map((el) => (
-                    <div
-                      key={el.id}
-                      className="p-2 rounded bg-background border text-sm"
-                    >
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded mr-1 ${
-                          el.evolutionStatus === "new"
-                            ? "bg-blue-100"
-                            : el.evolutionStatus === "strengthened"
-                              ? "bg-green-100"
-                              : el.evolutionStatus === "contradicted"
-                                ? "bg-red-100"
-                                : "bg-gray-100"
-                        }`}
+                  {currentEvidence.map((el) => {
+                    const source = el.sourceChunk.source;
+                    const isTranscript =
+                      source?.type === "TRANSCRIPT" &&
+                      (el.sourceChunk.metadata as { speaker?: string | null } | undefined)?.speaker;
+                    return isTranscript && source ? (
+                      <TranscriptEvidenceDisplay
+                        key={el.id}
+                        chunk={el.sourceChunk}
+                        source={source}
+                        confidence={el.confidence}
+                        evolutionStatus={el.evolutionStatus}
+                      />
+                    ) : (
+                      <div
+                        key={el.id}
+                        className="p-2 rounded bg-background border text-sm"
                       >
-                        {el.evolutionStatus}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {el.confidence}
-                      </span>
-                      <p className="mt-1 text-muted-foreground line-clamp-4">
-                        {el.sourceChunk.content}
-                      </p>
-                    </div>
-                  ))}
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded mr-1 ${
+                            el.evolutionStatus === "new"
+                              ? "bg-blue-100"
+                              : el.evolutionStatus === "strengthened"
+                                ? "bg-green-100"
+                                : el.evolutionStatus === "contradicted"
+                                  ? "bg-red-100"
+                                  : "bg-gray-100"
+                          }`}
+                        >
+                          {el.evolutionStatus}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {el.confidence}
+                        </span>
+                        <p className="mt-1 text-muted-foreground line-clamp-4">
+                          {el.sourceChunk.content}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : rightTab === "evidence" ? (
                 <p className="text-sm text-muted-foreground">

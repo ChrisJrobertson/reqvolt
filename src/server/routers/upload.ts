@@ -125,4 +125,73 @@ export const uploadRouter = router({
 
       return { sourceId: source.id };
     }),
+
+  replaceSource: workspaceProcedure
+    .input(
+      z.object({
+        sourceId: z.string(),
+        sessionId: z.string(),
+        objectKey: z.string(),
+        projectId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.uploadSession.findFirst({
+        where: {
+          id: input.sessionId,
+          workspaceId: ctx.workspaceId,
+          userId: ctx.userId,
+        },
+      });
+
+      if (!session) throw new Error("Upload session not found");
+      if (session.consumedAt) throw new Error("Session already consumed");
+      if (session.expiresAt < new Date()) throw new Error("Upload session expired");
+      if (session.objectKey !== input.objectKey) throw new Error("Object key mismatch");
+
+      const source = await db.source.findFirst({
+        where: {
+          id: input.sourceId,
+          workspaceId: ctx.workspaceId,
+          projectId: input.projectId,
+          deletedAt: null,
+        },
+      });
+
+      if (!source) throw new Error("Source not found");
+      if (!source.content || source.content.length < 10) {
+        throw new Error("Source has no content to replace. Use add source instead.");
+      }
+
+      const head = await headObject(input.objectKey);
+      if (head.contentLength > Number(session.expectedSize)) {
+        throw new Error("Uploaded file exceeds expected size");
+      }
+
+      await db.uploadSession.update({
+        where: { id: input.sessionId },
+        data: { consumedAt: new Date() },
+      });
+
+      await inngest.send({
+        name: "source/replace-extract-text",
+        data: {
+          sourceId: input.sourceId,
+          objectKey: input.objectKey,
+          workspaceId: ctx.workspaceId,
+          projectId: input.projectId,
+        },
+      });
+
+      await auditService.log({
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        action: "source.replace",
+        entityType: "Source",
+        entityId: input.sourceId,
+        metadata: { objectKey: input.objectKey },
+      });
+
+      return { sourceId: input.sourceId };
+    }),
 });

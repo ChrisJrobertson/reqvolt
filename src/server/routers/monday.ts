@@ -22,6 +22,8 @@ export const mondayRouter = router({
             soThatColumnId: z.string().optional(),
             evidenceColumnId: z.string().optional(),
             storyIdColumnId: z.string().optional(),
+            statusColumnId: z.string().optional(),
+            accountSlug: z.string().optional(),
           })
           .optional(),
       })
@@ -182,18 +184,20 @@ export const mondayRouter = router({
         });
 
         try {
+          let mondayItemId: string;
           if (existingPush && existingPush.mondayItemId) {
+            mondayItemId = existingPush.mondayItemId;
             await mondayApi.changeMultipleColumnValues(
               conn.accessToken,
               conn.mondayBoardId,
-              existingPush.mondayItemId,
+              mondayItemId,
               columnValues
             );
             await db.mondayPushLog.create({
               data: {
                 packVersionId: input.packVersionId,
                 storyId: story.id,
-                mondayItemId: existingPush.mondayItemId,
+                mondayItemId,
                 pushedAt: new Date(),
                 pushedBy: ctx.userId,
                 status: "success",
@@ -201,11 +205,11 @@ export const mondayRouter = router({
             });
             results.push({
               storyId: story.id,
-              mondayItemId: existingPush.mondayItemId,
+              mondayItemId,
               status: "success",
             });
           } else {
-            const mondayItemId = await mondayApi.createItem(
+            mondayItemId = await mondayApi.createItem(
               conn.accessToken,
               conn.mondayBoardId,
               conn.mondayGroupId,
@@ -234,6 +238,33 @@ export const mondayRouter = router({
             });
             results.push({ storyId: story.id, mondayItemId, status: "success" });
           }
+
+          const accountSlug =
+            (conn.fieldMapping as { accountSlug?: string })?.accountSlug ?? "app";
+          const externalUrl = `https://${accountSlug}.monday.com/boards/${conn.mondayBoardId}/pulses/${mondayItemId}`;
+
+          await db.storyExport.upsert({
+            where: {
+              storyId_externalSystem_packVersionId: {
+                storyId: story.id,
+                externalSystem: "monday",
+                packVersionId: input.packVersionId,
+              },
+            },
+            create: {
+              storyId: story.id,
+              packVersionId: input.packVersionId,
+              packId: version.pack.id,
+              workspaceId: version.pack.workspaceId,
+              externalSystem: "monday",
+              externalId: mondayItemId,
+              externalUrl,
+            },
+            update: {
+              externalId: mondayItemId,
+              externalUrl,
+            },
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           await db.mondayPushLog.create({

@@ -3,12 +3,13 @@
  * Uses Redis when REDIS_URL is set; skips check otherwise.
  */
 import Redis from "ioredis";
+import { env } from "@/lib/env";
 
 let _redis: Redis | null = null;
 
 function getRedis(): Redis | null {
   if (_redis) return _redis;
-  const url = process.env.REDIS_URL;
+  const url = env.REDIS_URL;
   if (!url) return null;
   _redis = new Redis(url);
   return _redis;
@@ -31,7 +32,7 @@ export async function checkTokenBudget(workspaceId: string): Promise<
   if (!redis) return { ok: true };
 
   const total = await getCurrentTokenTotal(workspaceId);
-  const budget = Number(process.env.LLM_TOKEN_BUDGET_MONTHLY) || 500000;
+  const budget = env.LLM_TOKEN_BUDGET_MONTHLY;
 
   if (total >= budget) {
     return {

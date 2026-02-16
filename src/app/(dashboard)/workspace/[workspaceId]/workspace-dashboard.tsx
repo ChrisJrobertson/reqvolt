@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
+import { AttentionWidget } from "@/components/attention-widget";
 
 interface Project {
   id: string;
@@ -33,6 +34,9 @@ export function WorkspaceDashboard({
 
   return (
     <div className="space-y-8">
+      <section>
+        <AttentionWidget workspaceId={workspaceId} />
+      </section>
       <section>
         <h2 className="text-lg font-semibold mb-4">Create Project</h2>
         <form

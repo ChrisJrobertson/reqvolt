@@ -15,6 +15,10 @@ export const workspaceRouter = router({
       return workspaceService.getById(input.workspaceId, ctx.workspaceId);
     }),
 
+  getCurrentMember: workspaceProcedure.query(async ({ ctx }) => {
+    return { role: ctx.member.role };
+  }),
+
   create: protectedProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {

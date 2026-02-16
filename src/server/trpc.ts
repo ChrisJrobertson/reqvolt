@@ -5,18 +5,20 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { auth } from "@clerk/nextjs/server";
+import * as Sentry from "@sentry/nextjs";
 import { db } from "./db";
+import { WorkspaceRole } from "@prisma/client";
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const { userId } = await auth();
   const workspaceId = opts.headers.get("x-workspace-id");
 
   if (!userId) {
-    return { userId: null, workspaceId: null, db };
+    return { userId: null, workspaceId: null, member: null, db };
   }
 
   if (!workspaceId) {
-    return { userId, workspaceId: null, db };
+    return { userId, workspaceId: null, member: null, db };
   }
 
   const member = await db.workspaceMember.findFirst({
@@ -24,14 +26,32 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
   });
 
   if (!member) {
-    return { userId, workspaceId: null, db };
+    return { userId, workspaceId: null, member: null, db };
   }
 
-  return { userId, workspaceId, db };
+  return { userId, workspaceId, member, db };
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
   transformer: superjson,
+  errorFormatter({ shape, error, path }) {
+    const code = error.code;
+    if (
+      code !== "UNAUTHORIZED" &&
+      code !== "FORBIDDEN" &&
+      code !== "NOT_FOUND" &&
+      code !== "BAD_REQUEST"
+    ) {
+      Sentry.withScope((scope) => {
+        scope.setTag("trpc", "error");
+        scope.setExtra("code", code);
+        if (path) scope.setExtra("path", path);
+        if (error.cause) scope.setExtra("cause", String(error.cause));
+        Sentry.captureException(error);
+      });
+    }
+    return shape;
+  },
 });
 
 export const router = t.router;
@@ -59,6 +79,17 @@ export const workspaceProcedure = t.procedure.use(async ({ ctx, next }) => {
       ...ctx,
       userId: ctx.userId,
       workspaceId: ctx.workspaceId,
+      member: ctx.member!,
     },
   });
+});
+
+export const adminProcedure = workspaceProcedure.use(async ({ ctx, next }) => {
+  if (ctx.member?.role !== WorkspaceRole.Admin) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Admin role required",
+    });
+  }
+  return next({ ctx });
 });

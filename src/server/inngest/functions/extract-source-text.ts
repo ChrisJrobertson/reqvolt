@@ -79,7 +79,11 @@ export const extractSourceText = inngest.createFunction(
       if (trimmed.length >= 10) {
         await step.sendEvent("trigger-chunk-embed", {
           name: "source/chunk-and-embed",
-          data: { sourceId, workspaceId },
+          data: {
+            sourceId,
+            workspaceId,
+            projectId: source.projectId,
+          },
         });
       }
 

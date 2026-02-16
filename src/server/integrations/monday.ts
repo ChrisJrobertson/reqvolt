@@ -26,6 +26,8 @@ export interface FieldMapping {
   soThatColumnId?: string;
   evidenceColumnId?: string;
   storyIdColumnId?: string;
+  statusColumnId?: string;
+  accountSlug?: string;
 }
 
 async function mondayRequest<T>(
@@ -247,3 +249,65 @@ export async function changeMultipleColumnValues(
 }
 
 export { buildColumnValues };
+
+export interface MondayItemWithStatus {
+  id: string;
+  column_values: Array<{
+    id: string;
+    text: string | null;
+    type: string;
+  }>;
+  updates?: Array<{
+    id: string;
+    body: string;
+    text_body: string | null;
+    created_at: string;
+    creator: { name: string } | null;
+  }>;
+}
+
+export async function getItemsWithStatusAndUpdates(
+  apiToken: string,
+  boardId: string,
+  itemIds: string[],
+  updatesLimit: number = 10
+): Promise<MondayItemWithStatus[]> {
+  if (itemIds.length === 0) return [];
+
+  const data = await mondayRequest<{
+    boards: Array<{
+      items: Array<{
+        id: string;
+        column_values: Array<{ id: string; text: string | null; type: string }>;
+        updates: Array<{
+          id: string;
+          body: string;
+          text_body: string | null;
+          created_at: string;
+          creator: { name: string } | null;
+        }>;
+      }>;
+    }>;
+  }>(
+    apiToken,
+    `query ($boardId: ID!, $itemIds: [ID!]!) {
+      boards(ids: [$boardId]) {
+        items(ids: $itemIds) {
+          id
+          column_values { id text type }
+          updates(limit: ${updatesLimit}) {
+            id
+            body
+            text_body
+            created_at
+            creator { name }
+          }
+        }
+      }
+    }`,
+    { boardId: String(boardId), itemIds }
+  );
+
+  const board = data.boards[0];
+  return board?.items ?? [];
+}

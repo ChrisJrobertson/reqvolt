@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { PackHeader } from "./pack-header";
 import { PackEditor } from "./pack-editor";
+import { PackHealthPanel } from "./pack-health-panel";
+import { SourceChangeImpactBanner } from "./SourceChangeImpactBanner";
 
 interface Source {
   id: string;
@@ -45,6 +47,7 @@ interface QAFlag {
 interface PackVersion {
   id: string;
   versionNumber: number;
+  sourceIds?: unknown;
   summary: string | null;
   nonGoals: string | null;
   openQuestions: unknown;
@@ -99,8 +102,17 @@ export function PackPageClient({
     })),
   };
 
+  const latestVersion = displayPack.versions[0];
+  const sourceIds = (latestVersion?.sourceIds as string[] | undefined) ?? [];
+
   return (
     <>
+      <SourceChangeImpactBanner
+        packId={pack.id}
+        workspaceId={workspaceId}
+        projectId={projectId}
+        sourceIds={sourceIds}
+      />
       <PackHeader
         pack={displayPack}
         sources={sources}
@@ -109,6 +121,9 @@ export function PackPageClient({
         workspaceId={workspaceId}
         projectId={projectId}
       />
+      <div className="mb-6">
+        <PackHealthPanel packId={pack.id} />
+      </div>
       <PackEditor
         pack={displayPack}
         evidenceMapByVersionId={evidenceMapByVersionId}

@@ -2,6 +2,12 @@
 
 AI-powered Story Packs for agile teams. Converts messy discovery inputs into evidence-linked stories with testable acceptance criteria.
 
+## Prerequisites
+
+- Node.js 20.19+
+- pnpm
+- Neon PostgreSQL database
+
 ## Quick Start
 
 ### 1. Install dependencies
@@ -18,20 +24,13 @@ Copy `.env.example` to `.env.local` and fill in your values:
 cp .env.example .env.local
 ```
 
-**Required for local development:**
-
-- `DATABASE_URL` - Neon PostgreSQL connection string
-- `CLERK_SECRET_KEY` - From [Clerk Dashboard](https://dashboard.clerk.com)
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - From Clerk Dashboard
-- `ANTHROPIC_API_KEY` - For pack generation
-- `OPENAI_API_KEY` - For embeddings
-- `R2_*` - Cloudflare R2 for file uploads
-- `INNGEST_SIGNING_KEY` - For background jobs
+See `.env.example` for all variables. Required: `DATABASE_URL`, Clerk keys, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, R2 config, `INNGEST_SIGNING_KEY`.
 
 ### 3. Run database migrations
 
 ```bash
 pnpm db:migrate
+pnpm db:seed
 ```
 
 ### 4. Start development server
@@ -42,12 +41,9 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Project Structure
+## Architecture
 
-- `src/app/` - Next.js App Router pages
-- `src/server/routers/` - tRPC API routes
-- `src/server/services/` - Business logic
-- `prisma/` - Database schema and migrations
+Next.js 15 App Router, tRPC API, Prisma + Neon PostgreSQL, Clerk auth, Inngest background jobs. Tenant isolation via `workspaceId`.
 
 ## Commands
 
@@ -56,21 +52,10 @@ Open [http://localhost:3000](http://localhost:3000).
 | `pnpm dev` | Start dev server |
 | `pnpm build` | Production build |
 | `pnpm verify` | Lint + typecheck + test + build |
+| `pnpm test` | Run unit tests |
 | `pnpm db:migrate` | Run migrations |
 | `pnpm db:studio` | Open Prisma Studio |
 
-## Features Implemented
+## Deployment
 
-- **Auth & Workspaces**: Clerk magic link, auto-create workspace, projects
-- **Source Ingestion**: Paste text/email, upload PDF/DOCX via presigned R2 URLs
-- **RAG Pipeline**: Chunking, OpenAI embeddings, pgvector retrieval
-- **Pack Generation**: AI-generated Story Packs with evidence linking
-- **Pack Editor**: Three-panel layout (nav, content, evidence), evidence badges, unsupported flags
-- **Regeneration**: New version with source/notes selection, version selector
-
-## Architecture
-
-- **Tenant isolation**: `workspaceId` via `x-workspace-id` header
-- **API**: tRPC only (no Server Actions)
-- **File uploads**: Presigned URLs to Cloudflare R2
-- **Database**: Neon PostgreSQL with pgvector
+See `docs/DEPLOYMENT.md` for Vercel deployment instructions.

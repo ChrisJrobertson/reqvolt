@@ -26,7 +26,13 @@ export async function getEvidenceMapForPackVersion(packVersionId: string) {
       entityId: { in: allEntityIds },
       entityType: { in: ["story", "acceptance_criteria"] },
     },
-    include: { sourceChunk: { select: { content: true } } },
+    include: {
+      sourceChunk: {
+        include: {
+          source: { select: { id: true, name: true, type: true } },
+        },
+      },
+    },
   });
 
   const story: Record<string, typeof links> = {};

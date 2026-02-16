@@ -3,18 +3,19 @@
  * NEVER log source text or prompt content - metadata only for cost monitoring.
  */
 import { Langfuse } from "langfuse";
+import { env } from "@/lib/env";
 
 let _langfuse: Langfuse | null = null;
 
 export function getLangfuse(): Langfuse | null {
   if (_langfuse) return _langfuse;
-  const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
-  const secretKey = process.env.LANGFUSE_SECRET_KEY;
+  const publicKey = env.LANGFUSE_PUBLIC_KEY;
+  const secretKey = env.LANGFUSE_SECRET_KEY;
   if (!publicKey || !secretKey) return null;
   _langfuse = new Langfuse({
     publicKey,
     secretKey,
-    baseUrl: process.env.LANGFUSE_HOST ?? "https://cloud.langfuse.com",
+    baseUrl: env.LANGFUSE_HOST,
   });
   return _langfuse;
 }

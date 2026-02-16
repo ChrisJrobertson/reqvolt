@@ -1,11 +1,35 @@
 import { z } from "zod";
 import { router, workspaceProcedure, publicProcedure } from "../trpc";
 import { db } from "../db";
+import { HealthStatus } from "@prisma/client";
 import { generatePack } from "../services/generation";
 import { refreshPack } from "../services/refresh";
 import { runQARules } from "../services/qa-rules";
 import { auditService } from "../services/audit";
+import { computeAndPersistPackHealth } from "../services/health";
+import { inngest } from "../inngest/client";
+import Redis from "ioredis";
+import { env } from "@/lib/env";
 import crypto from "node:crypto";
+
+let _redis: Redis | null = null;
+function getRedis(): Redis | null {
+  if (_redis) return _redis;
+  const url = env.REDIS_URL;
+  if (!url) return null;
+  _redis = new Redis(url);
+  return _redis;
+}
+
+async function checkHealthRefreshRateLimit(packId: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return true;
+  const key = `health-refresh:${packId}`;
+  const ttl = await redis.ttl(key);
+  if (ttl > 0) return false;
+  await redis.setex(key, 60, "1");
+  return true;
+}
 
 export const packRouter = router({
   list: workspaceProcedure
@@ -14,6 +38,31 @@ export const packRouter = router({
       return db.pack.findMany({
         where: { projectId: input.projectId, workspaceId: ctx.workspaceId },
         orderBy: { updatedAt: "desc" },
+      });
+    }),
+
+  listNeedingAttention: workspaceProcedure
+    .input(
+      z.object({
+        projectId: z.string().optional(),
+        limit: z.number().min(1).max(20).default(5),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const where: { workspaceId: string; healthStatus?: object; projectId?: string } = {
+        workspaceId: ctx.workspaceId,
+        healthStatus: { not: HealthStatus.healthy },
+      };
+      if (input.projectId) {
+        where.projectId = input.projectId;
+      }
+      return db.pack.findMany({
+        where,
+        orderBy: { healthScore: "asc" },
+        take: input.limit,
+        include: {
+          project: { select: { name: true } },
+        },
       });
     }),
 
@@ -45,6 +94,98 @@ export const packRouter = router({
       return pack;
     }),
 
+  getHealth: workspaceProcedure
+    .input(z.object({ packId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const pack = await db.pack.findFirst({
+        where: { id: input.packId, workspaceId: ctx.workspaceId },
+        select: {
+          healthScore: true,
+          healthStatus: true,
+          lastHealthCheck: true,
+          id: true,
+        },
+      });
+      if (!pack) throw new Error("Pack not found");
+
+      let score = pack.healthScore ?? 100;
+      let status = pack.healthStatus ?? "healthy";
+      let factors: Record<string, number> = {
+        sourceDrift: 100,
+        evidenceCoverage: 100,
+        qaPassRate: 100,
+        deliveryFeedback: 100,
+        sourceAge: 100,
+      };
+
+      const latestHealth = await db.packHealth.findFirst({
+        where: { packId: input.packId },
+        orderBy: { computedAt: "desc" },
+      });
+      if (latestHealth) {
+        score = latestHealth.score;
+        status = latestHealth.status as "healthy" | "stale" | "at_risk" | "outdated";
+        factors = (latestHealth.factors as Record<string, number>) ?? factors;
+      } else {
+        const result = await computeAndPersistPackHealth(input.packId);
+        score = result.score;
+        status = result.status;
+        factors = result.factors;
+      }
+
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const previousHealth = await db.packHealth.findFirst({
+        where: { packId: input.packId, computedAt: { lte: sevenDaysAgo } },
+        orderBy: { computedAt: "desc" },
+      });
+
+      let trend: "improving" | "stable" | "declining" = "stable";
+      if (previousHealth) {
+        if (score > previousHealth.score) trend = "improving";
+        else if (score < previousHealth.score) trend = "declining";
+      }
+
+      return {
+        score,
+        status,
+        factors,
+        computedAt: pack.lastHealthCheck,
+        previousScore: previousHealth?.score,
+        previousStatus: previousHealth?.status,
+        trend,
+      };
+    }),
+
+  refreshHealth: workspaceProcedure
+    .input(z.object({ packId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const pack = await db.pack.findFirst({
+        where: { id: input.packId, workspaceId: ctx.workspaceId },
+      });
+      if (!pack) throw new Error("Pack not found");
+
+      const allowed = await checkHealthRefreshRateLimit(input.packId);
+      if (!allowed) {
+        throw new Error("Rate limited. Try again in a minute.");
+      }
+
+      await inngest.send({
+        name: "pack/health.recompute",
+        data: { packId: input.packId },
+      });
+
+      await auditService.log({
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        action: "pack.health.refresh",
+        entityType: "Pack",
+        entityId: input.packId,
+      });
+
+      return { message: "Health recomputation triggered" };
+    }),
+
   refresh: workspaceProcedure
     .input(
       z.object({
@@ -59,6 +200,11 @@ export const packRouter = router({
         workspaceId: ctx.workspaceId,
         sourceIds: input.sourceIds,
         userNotes: input.userNotes,
+      });
+
+      await inngest.send({
+        name: "pack/health.recompute",
+        data: { packId: input.packId },
       });
 
       await auditService.log({
@@ -127,6 +273,11 @@ export const packRouter = router({
         packId: input.packId,
       });
 
+      await inngest.send({
+        name: "pack/health.recompute",
+        data: { packId: input.packId },
+      });
+
       await auditService.log({
         workspaceId: ctx.workspaceId,
         userId: ctx.userId,
@@ -155,6 +306,11 @@ export const packRouter = router({
         sourceIds: input.sourceIds,
         templateId: input.templateId,
         userNotes: input.userNotes,
+      });
+
+      await inngest.send({
+        name: "pack/health.recompute",
+        data: { packId: result.packId },
       });
 
       await auditService.log({

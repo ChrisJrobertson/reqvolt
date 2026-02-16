@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10'
+
+jobs:
+  verify:
+    name: Lint, Typecheck & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+        env:
+          DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub"
+          CLERK_SECRET_KEY: "sk_test_stub"
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_stub"
+          ANTHROPIC_API_KEY: "sk-ant-stub"
+          OPENAI_API_KEY: "sk-stub"
+          INNGEST_SIGNING_KEY: "signkey-stub"
+          INNGEST_EVENT_KEY: "eventkey-stub"
+          R2_ACCOUNT_ID: "stub"
+          R2_ACCESS_KEY_ID: "stub"
+          R2_SECRET_ACCESS_KEY: "stub"
+          R2_BUCKET_NAME: "stub"
+          R2_ENDPOINT: "https://stub.r2.cloudflarestorage.com"
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Run tests
+        run: pnpm test
+        env:
+          DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub"
+          CLERK_SECRET_KEY: "sk_test_stub"
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_stub"
+          ANTHROPIC_API_KEY: "sk-ant-stub"
+          OPENAI_API_KEY: "sk-stub"
+          INNGEST_SIGNING_KEY: "signkey-stub"
+          INNGEST_EVENT_KEY: "eventkey-stub"
+          R2_ACCOUNT_ID: "stub"
+          R2_ACCESS_KEY_ID: "stub"
+          R2_SECRET_ACCESS_KEY: "stub"
+          R2_BUCKET_NAME: "stub"
+          R2_ENDPOINT: "https://stub.r2.cloudflarestorage.com"

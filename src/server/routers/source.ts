@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { router, workspaceProcedure } from "../trpc";
 import { SourceType } from "@prisma/client";
+import { db } from "../db";
 import { sourceService } from "../services/source";
 import { auditService } from "../services/audit";
 
@@ -66,6 +67,46 @@ export const sourceRouter = router({
         entityId: source.id,
       });
       return source;
+    }),
+
+  listVersions: workspaceProcedure
+    .input(
+      z.object({
+        sourceId: z.string(),
+        limit: z.number().min(1).max(50).optional().default(20),
+        offset: z.number().min(0).optional().default(0),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const source = await db.source.findFirst({
+        where: { id: input.sourceId, workspaceId: ctx.workspaceId },
+      });
+      if (!source) throw new Error("Source not found");
+
+      const versions = await db.sourceVersion.findMany({
+        where: { sourceId: input.sourceId },
+        orderBy: { versionNumber: "desc" },
+        take: input.limit,
+        skip: input.offset,
+      });
+
+      const versionsWithDiffStats = await Promise.all(
+        versions.map(async (v) => {
+          const diffs = await db.sourceChunkDiff.findMany({
+            where: { newVersionId: v.id },
+            select: { diffType: true },
+          });
+          const added = diffs.filter((d) => d.diffType === "added").length;
+          const removed = diffs.filter((d) => d.diffType === "removed").length;
+          const modified = diffs.filter((d) => d.diffType === "modified").length;
+          return {
+            ...v,
+            diffStats: { added, removed, modified },
+          };
+        })
+      );
+
+      return versionsWithDiffStats;
     }),
 
   delete: workspaceProcedure

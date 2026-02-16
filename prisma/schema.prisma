@@ -21,10 +21,26 @@ enum SourceType {
   WORKSHOP_NOTES
   RETRO_NOTES
   INTERVIEW_TRANSCRIPT
+  TRANSCRIPT
   EMAIL
   PDF
   DOCX
   OTHER
+}
+
+enum PackReviewStatus {
+  draft
+  in_review
+  partially_approved
+  approved
+  locked
+}
+
+enum HealthStatus {
+  healthy
+  stale
+  at_risk
+  outdated
 }
 
 enum ExtractionQuality {
@@ -94,6 +110,12 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  healthWeights           Json    @default("{\"sourceDrift\":0.30,\"evidenceCoverage\":0.25,\"qaPassRate\":0.20,\"deliveryFeedback\":0.15,\"sourceAge\":0.10}")
+  similarityThreshold     Float   @default(0.78)
+  jiraRejectionStatuses   String[] @default(["Rejected", "Won't Do", "Cancelled"])
+  jiraSignalWords         String[] @default(["unclear", "ambiguous", "question", "assumption", "wrong", "missing", "confused", "what does", "what do you mean"])
+  mondayRejectionStatuses String[] @default(["Stuck", "Rejected"])
+
   members   WorkspaceMember[]
   projects  Project[]
   auditLogs AuditLog[]
@@ -101,6 +123,11 @@ model Workspace {
   glossary  GlossaryEntry[]
   uploadSessions UploadSession[]
   mondayConnection MondayConnection?
+  jiraConnection JiraConnection?
+  storyExports StoryExport[]
+  apiKeys ApiKey[]
+  notifications Notification[]
+  notificationPreferences NotificationPreference[]
 }
 
 model WorkspaceMember {
@@ -119,12 +146,13 @@ model WorkspaceMember {
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  workspaceId String
-  name        String
-  clientName  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  workspaceId     String
+  name            String
+  clientName      String?
+  forwardingEmail String?  @unique @db.VarChar(255)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   sources   Source[]
@@ -146,11 +174,22 @@ model Source {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
+  currentVersionId     String?
+  sourceConnectionType String  @default("uploaded")
+  externalSourceId     String?  @db.VarChar(500)
+  externalSourceUrl    String?  @db.VarChar(1000)
+  lastSyncedAt         DateTime?
+  syncStatus           String   @default("manual")
+
   project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   chunks  SourceChunk[]
+  versions SourceVersion[]
+  chunkDiffs SourceChunkDiff[]
+  changeImpacts SourceChangeImpact[]
   @@index([projectId])
   @@index([workspaceId])
   @@index([deletedAt])
+  @@index([projectId, deletedAt])
 }
 
 model SourceChunk {
@@ -159,6 +198,7 @@ model SourceChunk {
   content    String   @db.Text
   tokenCount Int      @default(0)
   chunkIndex Int
+  metadata   Json?
   embedding  Unsupported("vector(1536)")?
 
   source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
@@ -172,11 +212,19 @@ model Pack {
   projectId   String
   workspaceId String
   name        String
+  reviewStatus PackReviewStatus @default(draft)
+  healthScore  Int?
+  healthStatus HealthStatus @default(healthy)
+  lastHealthCheck DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions PackVersion[]
+  healthHistory PackHealth[]
+  storyExports StoryExport[]
+  deliveryFeedback DeliveryFeedback[]
+  changeImpacts SourceChangeImpact[]
   @@index([projectId])
   @@index([workspaceId])
 }
@@ -203,6 +251,7 @@ model PackVersion {
   qaFlags        QAFlag[]
   reviewLinks    ReviewLink[]
   mondayPushLogs MondayPushLog[]
+  storyExports   StoryExport[]
   @@index([packId])
 }
 
@@ -221,6 +270,8 @@ model Story {
   acceptanceCriteria AcceptanceCriteria[]
   storyApprovals     StoryApproval[]
   mondayPushLogs     MondayPushLog[]
+  storyExports       StoryExport[]
+  deliveryFeedback   DeliveryFeedback[]
   @@index([packVersionId])
 }
 
@@ -314,6 +365,7 @@ model AuditLog {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   @@index([workspaceId])
   @@index([userId])
+  @@index([workspaceId, createdAt])
 }
 
 model Template {
@@ -391,6 +443,26 @@ model MondayConnection {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
+model JiraConnection {
+  id             String    @id @default(cuid())
+  workspaceId    String    @unique
+  cloudId        String
+  siteUrl        String    @db.VarChar(500)
+  accessToken    String    @db.Text
+  refreshToken   String    @db.Text
+  tokenExpiresAt DateTime
+  scopes         String    @db.VarChar(500)
+  isActive       Boolean   @default(true)
+  lastSyncedAt   DateTime?
+  syncError      String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
 model MondayPushLog {
   id             String     @id @default(cuid())
   packVersionId  String
@@ -405,4 +477,187 @@ model MondayPushLog {
   story      Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
   @@index([packVersionId])
   @@index([storyId])
+}
+
+model SourceVersion {
+  id            String   @id @default(cuid())
+  sourceId      String
+  versionNumber Int
+  content       String   @db.Text
+  contentHash   String   @db.VarChar(64)
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  source        Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  chunkDiffsOld SourceChunkDiff[] @relation("OldVersion")
+  chunkDiffsNew SourceChunkDiff[] @relation("NewVersion")
+  changeImpacts SourceChangeImpact[]
+
+  @@unique([sourceId, versionNumber])
+  @@index([sourceId])
+}
+
+model SourceChunkDiff {
+  id              String        @id @default(cuid())
+  sourceId        String
+  oldVersionId    String?
+  newVersionId    String
+  diffType        String
+  oldChunkId      String?
+  newChunkId      String?
+  similarityScore Float?
+  createdAt       DateTime      @default(now())
+
+  source     Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  oldVersion SourceVersion? @relation("OldVersion", fields: [oldVersionId], references: [id])
+  newVersion SourceVersion  @relation("NewVersion", fields: [newVersionId], references: [id])
+
+  @@index([sourceId, newVersionId])
+}
+
+model PackHealth {
+  id         String   @id @default(cuid())
+  packId     String
+  score      Int
+  status     String
+  factors    Json
+  computedAt DateTime @default(now())
+
+  pack Pack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@index([packId, computedAt])
+}
+
+model StoryExport {
+  id                     String    @id @default(cuid())
+  storyId                String
+  packVersionId          String
+  packId                 String
+  workspaceId            String
+  externalSystem         String
+  externalId             String    @db.VarChar(255)
+  externalUrl            String?   @db.VarChar(1000)
+  externalStatus         String?   @db.VarChar(100)
+  externalStatusCategory String?   @db.VarChar(50)
+  lastSyncedAt           DateTime?
+  syncError              String?   @db.Text
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  story          Story          @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  packVersion    PackVersion    @relation(fields: [packVersionId], references: [id])
+  pack           Pack           @relation(fields: [packId], references: [id])
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id])
+  deliveryFeedback DeliveryFeedback[]
+
+  @@unique([storyId, externalSystem, packVersionId])
+  @@index([packId])
+  @@index([workspaceId, externalSystem])
+  @@index([packVersionId, externalSystem])
+}
+
+model DeliveryFeedback {
+  id                String    @id @default(cuid())
+  storyExportId     String
+  storyId           String
+  packId            String
+  feedbackType      String
+  externalAuthor    String?   @db.VarChar(255)
+  content           String?   @db.Text
+  externalCreatedAt DateTime?
+  matchedSignalWords String[]
+  isResolved        Boolean   @default(false)
+  resolvedAt        DateTime?
+  resolvedBy        String?   @db.VarChar(255)
+  resolutionNote    String?   @db.Text
+  createdAt         DateTime  @default(now())
+
+  storyExport StoryExport @relation(fields: [storyExportId], references: [id], onDelete: Cascade)
+  story       Story       @relation(fields: [storyId], references: [id])
+  pack        Pack        @relation(fields: [packId], references: [id])
+
+  @@index([packId])
+  @@index([storyId])
+  @@index([storyExportId, isResolved])
+}
+
+model SourceChangeImpact {
+  id                 String    @id @default(cuid())
+  sourceId           String
+  packId             String
+  sourceVersionId    String
+  affectedStoryIds   String[]
+  affectedStoryCount Int
+  affectedAcCount    Int
+  impactSummary      String?   @db.Text
+  summaryPending     Boolean   @default(false)
+  retryCount         Int       @default(0)
+  severity           String    @default("moderate")
+  isAcknowledged     Boolean   @default(false)
+  acknowledgedAt     DateTime?
+  acknowledgedBy     String?   @db.VarChar(255)
+  createdAt          DateTime  @default(now())
+
+  source       Source       @relation(fields: [sourceId], references: [id])
+  pack         Pack         @relation(fields: [packId], references: [id])
+  sourceVersion SourceVersion @relation(fields: [sourceVersionId], references: [id])
+
+  @@index([packId])
+  @@index([packId, isAcknowledged])
+}
+
+model ApiKey {
+  id           String    @id @default(cuid())
+  workspaceId String
+  name         String    @db.VarChar(255)
+  keyHash      String    @db.VarChar(64)
+  keyPrefix    String    @db.VarChar(10)
+  lastUsedAt   DateTime?
+  requestCount Int       @default(0)
+  isRevoked    Boolean   @default(false)
+  revokedAt    DateTime?
+  createdBy    String    @db.VarChar(255)
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([keyHash])
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  userId          String    @db.VarChar(255)
+  type            String
+  title           String    @db.VarChar(500)
+  body            String?   @db.Text
+  link            String?   @db.VarChar(1000)
+  relatedPackId   String?
+  relatedSourceId String?
+  isRead          Boolean   @default(false)
+  readAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId])
+  @@index([userId, isRead, createdAt])
+}
+
+model NotificationPreference {
+  id                     String    @id @default(cuid())
+  workspaceId            String
+  userId                 String    @db.VarChar(255)
+  emailFrequency         String    @default("daily")
+  notifySourceChanges    Boolean   @default(true)
+  notifyDeliveryFeedback Boolean   @default(true)
+  notifyHealthDegraded   Boolean   @default(true)
+  notifyEmailIngested    Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
 }

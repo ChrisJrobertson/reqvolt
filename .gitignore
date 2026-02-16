@@ -1,11 +1,54 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build
 .next/
-.env.local
-.env
-*.tsbuildinfo
-coverage/
-playwright-report/
-.vercel/
+out/
 dist/
 
+# Environment
+.env
+.env.local
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sentry
+.sentryclirc
+
+# Vercel
+.vercel/
+
+# Test coverage
+coverage/
+playwright-report/
+
+# Debug
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Inngest
+.inngest/
+
+# Generated
 /src/generated/prisma

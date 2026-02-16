@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/server/db";
 import { MondaySettings } from "./monday-settings";
+import { ApiKeyManagement } from "@/components/workspace/ApiKeyManagement";
+import { JiraConnectionCard } from "@/components/workspace/JiraConnectionCard";
 
 export default async function WorkspaceSettingsPage({
   params,
@@ -35,7 +37,27 @@ export default async function WorkspaceSettingsPage({
         <h1 className="text-2xl font-bold">Workspace Settings</h1>
       </header>
 
-      <MondaySettings workspaceId={workspaceId} />
+      <div className="space-y-8">
+        <section>
+          <Link
+            href={`/workspace/${workspaceId}/settings/notifications`}
+            className="block p-4 border rounded-lg hover:bg-muted/50"
+          >
+            <h2 className="font-semibold">Notifications</h2>
+            <p className="text-sm text-muted-foreground">
+              Email digest frequency and notification preferences
+            </p>
+          </Link>
+        </section>
+
+        <MondaySettings workspaceId={workspaceId} />
+        <section>
+          <ApiKeyManagement />
+        </section>
+        <section>
+          <JiraConnectionCard workspaceId={workspaceId} />
+        </section>
+      </div>
     </div>
   );
 }

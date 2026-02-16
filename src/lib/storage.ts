@@ -18,13 +18,15 @@ const ALLOWED_CONTENT_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 
+import { env } from "./env";
+
 function getS3Client() {
   return new S3Client({
-    region: process.env.R2_REGION ?? "auto",
-    endpoint: process.env.R2_ENDPOINT,
+    region: env.R2_REGION,
+    endpoint: env.R2_ENDPOINT,
     credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
     },
     forcePathStyle: true,
   });
@@ -53,7 +55,7 @@ export async function createPresignedUpload(params: {
 
   const objectKey = `uploads/${params.workspaceId}/${randomUUID()}/${params.fileName}`;
   const client = getS3Client();
-  const bucket = process.env.R2_BUCKET_NAME ?? "reqvolt-files";
+  const bucket = env.R2_BUCKET_NAME;
 
   const command = new PutObjectCommand({
     Bucket: bucket,
@@ -75,7 +77,7 @@ export async function headObject(objectKey: string): Promise<{
   contentType: string;
 }> {
   const client = getS3Client();
-  const bucket = process.env.R2_BUCKET_NAME ?? "reqvolt-files";
+  const bucket = env.R2_BUCKET_NAME;
   const result = await client.send(
     new HeadObjectCommand({ Bucket: bucket, Key: objectKey })
   );
@@ -87,7 +89,7 @@ export async function headObject(objectKey: string): Promise<{
 
 export async function getObjectStream(objectKey: string) {
   const client = getS3Client();
-  const bucket = process.env.R2_BUCKET_NAME ?? "reqvolt-files";
+  const bucket = env.R2_BUCKET_NAME;
   const result = await client.send(
     new GetObjectCommand({ Bucket: bucket, Key: objectKey })
   );
@@ -96,6 +98,23 @@ export async function getObjectStream(objectKey: string) {
 
 export async function deleteObject(objectKey: string): Promise<void> {
   const client = getS3Client();
-  const bucket = process.env.R2_BUCKET_NAME ?? "reqvolt-files";
+  const bucket = env.R2_BUCKET_NAME;
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }));
+}
+
+export async function putObject(
+  objectKey: string,
+  body: Buffer | Uint8Array,
+  contentType: string
+): Promise<void> {
+  const client = getS3Client();
+  const bucket = env.R2_BUCKET_NAME;
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
 }
