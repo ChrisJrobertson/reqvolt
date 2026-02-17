@@ -49,6 +49,17 @@ export default async function WorkspaceSettingsPage({
             </p>
           </Link>
         </section>
+        <section>
+          <Link
+            href={`/workspace/${workspaceId}/settings/data-processing`}
+            className="block p-4 border rounded-lg hover:bg-muted/50"
+          >
+            <h2 className="font-semibold">Data & AI Processing</h2>
+            <p className="text-sm text-muted-foreground">
+              Data flow, AI processing log, controls, and DPA download
+            </p>
+          </Link>
+        </section>
 
         <MondaySettings workspaceId={workspaceId} />
         <section>

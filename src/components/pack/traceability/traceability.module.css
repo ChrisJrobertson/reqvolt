@@ -1,0 +1,99 @@
+.nodeBase {
+  transition:
+    transform 200ms ease-out,
+    box-shadow 200ms ease-out,
+    opacity 200ms ease-out,
+    border-color 150ms ease-out,
+    border-width 150ms ease-out;
+  will-change: transform, opacity;
+}
+
+.nodeBase:hover {
+  transform: scale(1.02);
+}
+
+.nodeSelected {
+  animation: nodePulse 2s ease-in-out infinite;
+}
+
+.nodeGlowPulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+.nodeHandle {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.nodeBase:hover .nodeHandle,
+.nodeSelected .nodeHandle,
+.nodeFocused .nodeHandle {
+  opacity: 1;
+}
+
+.nodeFocused {
+  transform: scale(1.03);
+}
+
+.edgePath {
+  transition:
+    stroke-width 200ms ease-out,
+    opacity 200ms ease-out,
+    stroke 200ms ease-out;
+}
+
+.tracedEdgeAnimated {
+  animation: dashFlow 1.5s linear infinite;
+}
+
+.toolbarVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toolbarHidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes dashFlow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes nodePulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 24px rgba(59, 130, 246, 0.6));
+  }
+}
+
+@keyframes glowPulse {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nodeBase,
+  .edgePath {
+    transition: none !important;
+  }
+
+  .tracedEdgeAnimated,
+  .nodeSelected,
+  .nodeGlowPulse {
+    animation: none !important;
+  }
+}

@@ -1,9 +1,6 @@
 import { inngest } from "../client";
 import { db } from "@/server/db";
-import Anthropic from "@anthropic-ai/sdk";
-import { getModelForTask } from "@/server/services/model-router";
-
-const anthropic = new Anthropic();
+import { getAnalysisClient } from "@/lib/ai/model-router";
 const MAX_RETRIES = 5;
 const BATCH_SIZE = 20;
 
@@ -19,7 +16,7 @@ export const retryPendingSummaries = inngest.createFunction(
       take: BATCH_SIZE,
       include: {
         source: { select: { name: true } },
-        pack: { select: { name: true } },
+        pack: { select: { id: true, name: true, workspaceId: true } },
       },
     });
 
@@ -40,23 +37,20 @@ export const retryPendingSummaries = inngest.createFunction(
       }
 
       try {
-        const model = getModelForTask("impact-summary");
-        const response = await anthropic.messages.create({
-          model,
-          max_tokens: 100,
-          system:
+        const analysisClient = getAnalysisClient();
+        const response = await analysisClient.call({
+          workspaceId: impact.pack.workspaceId,
+          userId: "system",
+          task: "impact_summary",
+          packId: impact.packId,
+          maxTokens: 120,
+          systemPrompt:
             "Summarise how source changes affect requirements. One sentence, UK English.",
-          messages: [
-            {
-              role: "user",
-              content: `Source: ${impact.source.name}. Pack: ${impact.pack.name}. ${impact.affectedStoryCount} stories affected, ${impact.affectedAcCount} acceptance criteria. Severity: ${impact.severity}.`,
-            },
-          ],
+          userPrompt: `Source: ${impact.source.name}. Pack: ${impact.pack.name}. ${impact.affectedStoryCount} stories affected, ${impact.affectedAcCount} acceptance criteria. Severity: ${impact.severity}.`,
+          sourceIds: [impact.sourceId],
+          sourceChunksSent: impact.affectedAcCount,
         });
-
-        const text = response.content.find((c) => c.type === "text");
-        const summary =
-          typeof text === "object" && "text" in text ? text.text : null;
+        const summary = response.skipped ? null : response.text;
 
         if (summary) {
           await db.sourceChangeImpact.update({

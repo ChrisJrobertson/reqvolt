@@ -7,6 +7,7 @@ import {
 } from "@/lib/storage";
 import { inngest } from "../inngest/client";
 import { auditService } from "../services/audit";
+import { invalidateReadinessCache } from "../services/readiness-cache";
 import { SourceType } from "@prisma/client";
 
 const ALLOWED_CONTENT_TYPES = [
@@ -122,6 +123,7 @@ export const uploadRouter = router({
         entityId: source.id,
         metadata: { type: "file", objectKey: input.objectKey },
       });
+      await invalidateReadinessCache(input.projectId);
 
       return { sourceId: source.id };
     }),
@@ -191,6 +193,7 @@ export const uploadRouter = router({
         entityId: input.sourceId,
         metadata: { objectKey: input.objectKey },
       });
+      await invalidateReadinessCache(input.projectId);
 
       return { sourceId: input.sourceId };
     }),

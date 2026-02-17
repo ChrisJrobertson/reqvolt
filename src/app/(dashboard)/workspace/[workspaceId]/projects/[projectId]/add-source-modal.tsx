@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { SourceType } from "@prisma/client";
+import Link from "next/link";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_TYPES = [
@@ -20,10 +21,12 @@ const SOURCE_TYPES: { value: SourceType; label: string }[] = [
 ];
 
 export function AddSourceModal({
+  workspaceId,
   projectId,
   onClose,
   onSuccess,
 }: {
+  workspaceId: string;
   projectId: string;
   onClose: () => void;
   onSuccess: () => void;
@@ -165,6 +168,16 @@ export function AddSourceModal({
               Upload File
             </button>
           </div>
+          <p className="mb-4 text-xs text-muted-foreground">
+            🔒 Your documents are stored securely in Reqvolt&apos;s database and are never used
+            for AI training.{" "}
+            <Link
+              href={`/workspace/${workspaceId}/settings/data-processing`}
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Learn more
+            </Link>
+          </p>
 
           {tab === "notes" && (
             <form onSubmit={handleSubmitNotes} className="space-y-4">

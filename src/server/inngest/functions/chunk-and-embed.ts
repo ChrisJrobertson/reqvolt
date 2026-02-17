@@ -2,6 +2,7 @@ import { inngest } from "../client";
 import { db } from "@/server/db";
 import { chunkText } from "@/lib/chunking";
 import { embedText } from "@/server/services/embedding";
+import { getCachedAIControls } from "@/lib/ai/model-router";
 import { randomUUID } from "crypto";
 
 export const chunkAndEmbed = inngest.createFunction(
@@ -53,6 +54,7 @@ export const chunkAndEmbed = inngest.createFunction(
       sourceType: source.type,
     });
     const newChunkIds: string[] = [];
+    const controls = await getCachedAIControls(workspaceId);
 
     const metadataJson = (chunk: (typeof chunkResults)[number]) =>
       chunk.metadata
@@ -61,23 +63,41 @@ export const chunkAndEmbed = inngest.createFunction(
 
     for (let i = 0; i < chunkResults.length; i++) {
       const chunk = chunkResults[i]!;
-      const embedding = await embedText(chunk.content);
-      const embeddingStr = `[${embedding.join(",")}]`;
       const id = randomUUID();
       newChunkIds.push(id);
       const meta = metadataJson(chunk);
+      if (controls.aiEmbeddingEnabled) {
+        const embedding = await embedText(chunk.content, {
+          workspaceId,
+          userId: "system",
+          sourceIds: [sourceId],
+          task: "embedding_generation",
+        });
+        const embeddingStr = `[${embedding.join(",")}]`;
 
-      await db.$executeRawUnsafe(
-        `INSERT INTO "SourceChunk" (id, "sourceId", content, "tokenCount", "chunkIndex", metadata, embedding)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::vector)`,
-        id,
-        sourceId,
-        chunk.content,
-        chunk.tokenCount,
-        chunk.chunkIndex,
-        meta,
-        embeddingStr
-      );
+        await db.$executeRawUnsafe(
+          `INSERT INTO "SourceChunk" (id, "sourceId", content, "tokenCount", "chunkIndex", metadata, embedding)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::vector)`,
+          id,
+          sourceId,
+          chunk.content,
+          chunk.tokenCount,
+          chunk.chunkIndex,
+          meta,
+          embeddingStr
+        );
+      } else {
+        await db.$executeRawUnsafe(
+          `INSERT INTO "SourceChunk" (id, "sourceId", content, "tokenCount", "chunkIndex", metadata)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          id,
+          sourceId,
+          chunk.content,
+          chunk.tokenCount,
+          chunk.chunkIndex,
+          meta
+        );
+      }
     }
 
     const projId = projectId ?? source.projectId;

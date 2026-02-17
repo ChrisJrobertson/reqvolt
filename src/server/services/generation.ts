@@ -1,14 +1,12 @@
 /**
- * Pack generation: RAG retrieval, prompt assembly, Anthropic call, DB persistence.
+ * Pack generation with readiness-grounded prompts and post-generation quality gate.
  */
-import Anthropic from "@anthropic-ai/sdk";
 import { db } from "../db";
-import { embedText } from "./embedding";
-import { retrieveChunks } from "./retrieval";
-import { buildGenerationPrompt } from "../prompts/generation";
+import { buildGenerationUserPrompt } from "@/lib/prompts/generation-user";
+import { GENERATION_SYSTEM_PROMPT } from "@/lib/prompts/generation-system";
+import { getGenerationClient } from "@/lib/ai/model-router";
 import { runQARules } from "./qa-rules";
-import { getLangfuse } from "../lib/langfuse";
-import { getModelForTask } from "./model-router";
+import { assessGenerationQuality } from "./generation-quality-gate";
 import {
   hashGenerationInputs,
   getCachedResponse,
@@ -18,8 +16,6 @@ import {
   checkTokenBudget,
   addTokenUsage,
 } from "./token-budget";
-
-const anthropic = new Anthropic();
 
 export interface GeneratePackInput {
   projectId: string;
@@ -37,10 +33,39 @@ export async function generatePack(input: GeneratePackInput) {
     throw new Error("At least one source is required");
   }
 
-  const queryEmbedding = await embedText(
-    "Generate user stories with acceptance criteria from discovery inputs"
+  const sourcesWithChunks = await db.source.findMany({
+    where: {
+      workspaceId,
+      projectId,
+      id: { in: sourceIds },
+      deletedAt: null,
+      status: "completed",
+    },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      chunks: {
+        orderBy: { chunkIndex: "asc" },
+        select: {
+          id: true,
+          content: true,
+          chunkIndex: true,
+          metadata: true,
+        },
+      },
+    },
+  });
+
+  const chunks = sourcesWithChunks.flatMap((source) =>
+    source.chunks.map((chunk) => ({
+      id: chunk.id,
+      sourceId: source.id,
+      content: chunk.content,
+      chunkIndex: chunk.chunkIndex,
+      metadata: chunk.metadata as { speaker?: string | null; timestamp?: string | null } | null,
+    }))
   );
-  const chunks = await retrieveChunks(sourceIds, queryEmbedding, 20);
 
   if (chunks.length === 0) {
     throw new Error(
@@ -66,7 +91,8 @@ export async function generatePack(input: GeneratePackInput) {
       .join("\n");
   }
 
-  const model = getModelForTask("generation");
+  const generationClient = getGenerationClient();
+  const model = generationClient.model;
   const cacheKey = hashGenerationInputs({
     sourceIds,
     templateId,
@@ -79,49 +105,50 @@ export async function generatePack(input: GeneratePackInput) {
 
   if (cached) {
     parsed = cached as PackGenerationResponse;
-    getLangfuse()?.trace({
-      name: "pack.generation",
-      metadata: { model, workspaceId, cacheHit: true },
-    });
   } else {
     const budgetCheck = await checkTokenBudget(workspaceId);
     if (!budgetCheck.ok) throw new Error(budgetCheck.error);
 
-    const prompt = buildGenerationPrompt({
-      sourceChunks: chunks.map((c) => ({ content: c.content, sourceId: c.sourceId })),
-      templateContext,
-      glossaryContext,
-      userNotes,
+    const projectContext = [templateContext, glossaryContext, userNotes]
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+
+    const prompt = buildGenerationUserPrompt(
+      sourcesWithChunks.map((source) => ({
+        id: source.id,
+        name: source.name,
+        type: source.type,
+        chunks: source.chunks.map((chunk) => ({
+          id: chunk.id,
+          content: chunk.content,
+          chunkIndex: chunk.chunkIndex,
+          metadata: chunk.metadata as
+            | { speaker?: string | null; timestamp?: string | null }
+            | null,
+        })),
+      })),
+      projectContext || undefined
+    );
+
+    const response = await generationClient.call({
+      workspaceId,
+      packId: input.packId,
+      userId: "system",
+      task: "pack_generation",
+      systemPrompt: GENERATION_SYSTEM_PROMPT,
+      userPrompt: prompt,
+      maxTokens: 4096,
+      sourceIds,
+      sourceChunksSent: chunks.length,
     });
 
-    const start = Date.now();
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
+    if (response.skipped) {
+      throw new Error(response.reason ?? "AI generation skipped for this workspace");
+    }
 
-    const inputTokens = response.usage?.input_tokens ?? 0;
-    const outputTokens = response.usage?.output_tokens ?? 0;
-    await addTokenUsage(workspaceId, inputTokens, outputTokens);
-
-    getLangfuse()?.trace({
-      name: "pack.generation",
-      metadata: {
-        model,
-        workspaceId,
-        inputTokens,
-        outputTokens,
-        latencyMs: Date.now() - start,
-        cacheHit: false,
-      },
-    });
-
-    const textContent = response.content.find((c) => c.type === "text");
-    const rawJson =
-      typeof textContent === "object" && "text" in textContent
-        ? textContent.text
-        : "";
+    await addTokenUsage(workspaceId, response.inputTokens, response.outputTokens);
+    const rawJson = response.text;
 
     const jsonMatch = rawJson.match(/\{[\s\S]*\}/);
     const jsonStr = jsonMatch ? jsonMatch[0] : rawJson;
@@ -167,18 +194,23 @@ export async function generatePack(input: GeneratePackInput) {
       packId: pack.id,
       versionNumber,
       sourceIds: sourceIds,
-      summary: parsed.summary ?? "",
-      nonGoals: parsed.nonGoals ?? "",
-      openQuestions: parsed.openQuestions ?? [],
-      assumptions: parsed.assumptions ?? [],
-      decisions: parsed.decisions ?? [],
-      risks: parsed.risks ?? [],
+      summary: parsed.featureSummary ?? parsed.summary ?? "",
+      nonGoals: Array.isArray(parsed.nonGoals)
+        ? parsed.nonGoals.join("\n")
+        : parsed.nonGoals ?? "",
+      openQuestions: normaliseOpenQuestions(parsed.openQuestions),
+      assumptions: normaliseAssumptions(parsed.assumptions),
+      decisions: normaliseStringList(parsed.decisions),
+      risks: normaliseStringList(parsed.risks),
       generationConfig: { model, userNotes },
     },
   });
 
   const chunkIdByIndex = new Map<number, string>();
   chunks.forEach((c, i) => chunkIdByIndex.set(i, c.id));
+  const chunkIdSet = new Set(chunks.map((chunk) => chunk.id));
+  const isKnownChunkId = (id: unknown): id is string =>
+    typeof id === "string" && chunkIdSet.has(id);
 
   for (let i = 0; i < (parsed.stories ?? []).length; i++) {
     const s = parsed.stories![i]!;
@@ -188,24 +220,26 @@ export async function generatePack(input: GeneratePackInput) {
         sortOrder: i,
         persona: s.persona ?? "",
         want: s.want ?? "",
-        soThat: s.soThat ?? "",
+        soThat: s.benefit ?? s.soThat ?? "",
       },
     });
 
-    const storyEvidenceIndices = s.evidenceChunkIndices ?? [];
-    for (const idx of storyEvidenceIndices) {
-      const chunkId = chunkIdByIndex.get(idx);
-      if (chunkId) {
-        await db.evidenceLink.create({
-          data: {
-            entityType: "story",
-            entityId: story.id,
-            sourceChunkId: chunkId,
-            confidence: "medium",
-            evolutionStatus: "new",
-          },
-        });
-      }
+    const storyEvidenceChunkIds = (
+      s.sourceReferences ??
+      s.source_references ??
+      s.evidenceChunkIndices?.map((idx) => chunkIdByIndex.get(idx)).filter(Boolean) ??
+      []
+    ).filter(isKnownChunkId);
+    for (const chunkId of storyEvidenceChunkIds) {
+      await db.evidenceLink.create({
+        data: {
+          entityType: "story",
+          entityId: story.id,
+          sourceChunkId: chunkId,
+          confidence: mapConfidenceLevel(s.confidence ?? "inferred"),
+          evolutionStatus: "new",
+        },
+      });
     }
 
     for (let j = 0; j < (s.acceptanceCriteria ?? []).length; j++) {
@@ -220,46 +254,118 @@ export async function generatePack(input: GeneratePackInput) {
         },
       });
 
-      const acEvidenceIndices = ac.evidenceChunkIndices ?? [];
-      for (const idx of acEvidenceIndices) {
-        const chunkId = chunkIdByIndex.get(idx);
-        if (chunkId) {
-          await db.evidenceLink.create({
-            data: {
-              entityType: "acceptance_criteria",
-              entityId: acRecord.id,
-              sourceChunkId: chunkId,
-              confidence: "medium",
-              evolutionStatus: "new",
-            },
-          });
-        }
+      const acEvidenceChunkIds = (
+        ac.source_references ??
+        ac.sourceReferences ??
+        ac.evidenceChunkIndices?.map((idx) => chunkIdByIndex.get(idx)).filter(Boolean) ??
+        []
+      ).filter(isKnownChunkId);
+
+      for (const chunkId of acEvidenceChunkIds) {
+        await db.evidenceLink.create({
+          data: {
+            entityType: "acceptance_criteria",
+            entityId: acRecord.id,
+            sourceChunkId: chunkId,
+            confidence: mapConfidenceLevel(ac.confidence ?? "inferred"),
+            evolutionStatus: "new",
+          },
+        });
       }
     }
   }
 
   await runQARules(packVersion.id);
 
+  try {
+    await assessGenerationQuality(pack.id, packVersion.id);
+  } catch {
+    await db.packVersion.update({
+      where: { id: packVersion.id },
+      data: {
+        generationConfidence: {
+          note: "Quality assessment unavailable for this generation. Manual review recommended.",
+        },
+        selfReviewRun: false,
+        selfReviewPassed: null,
+      },
+    });
+  }
+
   return { packId: pack.id, packVersionId: packVersion.id };
 }
 
+function mapConfidenceLevel(value: string): "high" | "medium" | "low" {
+  const confidence = value.toLowerCase();
+  if (confidence === "direct") return "high";
+  if (confidence === "assumption") return "low";
+  if (confidence === "high") return "high";
+  if (confidence === "low") return "low";
+  return "medium";
+}
+
+function normaliseStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object") return JSON.stringify(entry);
+      return "";
+    })
+    .filter((entry) => entry.length > 0);
+}
+
+function normaliseOpenQuestions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && "question" in entry) {
+        return String((entry as { question: string }).question);
+      }
+      return "";
+    })
+    .filter((entry) => entry.length > 0);
+}
+
+function normaliseAssumptions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && "statement" in entry) {
+        return String((entry as { statement: string }).statement);
+      }
+      return "";
+    })
+    .filter((entry) => entry.length > 0);
+}
+
 interface PackGenerationResponse {
+  featureSummary?: string;
   summary?: string;
-  nonGoals?: string;
+  nonGoals?: string | string[];
   stories?: Array<{
     persona?: string;
     want?: string;
     soThat?: string;
+    benefit?: string;
+    confidence?: "direct" | "inferred" | "assumption" | "high" | "medium" | "low";
+    sourceReferences?: string[];
+    source_references?: string[];
     evidenceChunkIndices?: number[];
     acceptanceCriteria?: Array<{
       given?: string;
       when?: string;
       then?: string;
+      confidence?: "direct" | "inferred" | "assumption" | "high" | "medium" | "low";
+      sourceReferences?: string[];
+      source_references?: string[];
       evidenceChunkIndices?: number[];
     }>;
   }>;
-  openQuestions?: string[];
-  assumptions?: string[];
-  decisions?: string[];
-  risks?: string[];
+  openQuestions?: unknown[];
+  assumptions?: unknown[];
+  decisions?: unknown[];
+  risks?: unknown[];
 }

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
+import { SourceReadinessPanel } from "@/components/pack/SourceReadinessPanel";
+import { GenerationProgress } from "@/components/pack/GenerationProgress";
 
 function MondayPushHistory({ projectId }: { projectId: string }) {
   const { data: history } = trpc.monday.getPushHistory.useQuery({ projectId });
@@ -86,6 +88,7 @@ export function ProjectPageClient({
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const [generateNotes, setGenerateNotes] = useState("");
+  const selectedSourceIdList = Array.from(selectedSourceIds);
 
   const query = trpc.project.getById.useQuery(
     { projectId },
@@ -112,6 +115,14 @@ export function ProjectPageClient({
       window.location.href = `/workspace/${workspaceId}/projects/${projectId}/packs/${data.packId}`;
     },
   });
+  const readiness = trpc.pack.assessReadiness.useQuery(
+    { projectId, sourceIds: selectedSourceIdList },
+    {
+      enabled: selectedSourceIdList.length > 0,
+      staleTime: 60_000,
+    }
+  );
+  const { data: aiControls } = trpc.workspace.getAIProcessingControls.useQuery();
 
   const toggleSource = (id: string) => {
     setSelectedSourceIds((prev) => {
@@ -126,7 +137,7 @@ export function ProjectPageClient({
     if (selectedSourceIds.size === 0) return;
     generatePack.mutate({
       projectId,
-      sourceIds: Array.from(selectedSourceIds),
+      sourceIds: selectedSourceIdList,
       userNotes: generateNotes || undefined,
     });
   };
@@ -137,6 +148,17 @@ export function ProjectPageClient({
 
   const recentEmailCount =
     project?.sources.filter((s) => s.type === "EMAIL").length ?? 0;
+
+  const readinessStatus = readiness.data?.overallStatus;
+  const generationDisabledByControls = aiControls?.aiGenerationEnabled === false;
+  const generationBlocked = readinessStatus === "blocked" || generationDisabledByControls;
+  const generationButtonLabel = generationDisabledByControls
+    ? "AI generation disabled for this workspace"
+    : readinessStatus === "blocked"
+      ? "Cannot generate — resolve issues above"
+      : readinessStatus === "warnings"
+        ? "Generate Pack (with warnings)"
+        : "Generate Story Pack";
 
   return (
     <div className="space-y-8">
@@ -248,6 +270,12 @@ export function ProjectPageClient({
             </li>
           )}
         </ul>
+        {aiControls?.aiEmbeddingEnabled === false && (
+          <p className="mt-3 text-xs text-amber-700">
+            Semantic search is unavailable because embedding generation is disabled for this
+            workspace.
+          </p>
+        )}
       </section>
 
       <section>
@@ -258,7 +286,7 @@ export function ProjectPageClient({
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Story Packs</h2>
           {completedSources.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               <input
                 type="text"
                 placeholder="Guidance notes (optional)"
@@ -269,15 +297,43 @@ export function ProjectPageClient({
               <button
                 onClick={handleGenerate}
                 disabled={
-                  generatePack.isPending || selectedSourceIds.size === 0
+                  generatePack.isPending || selectedSourceIds.size === 0 || generationBlocked
                 }
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50"
+                className={`px-4 py-2 rounded-lg disabled:opacity-50 ${
+                  readinessStatus === "warnings"
+                    ? "bg-amber-500 text-white hover:bg-amber-600"
+                    : "bg-primary text-primary-foreground hover:opacity-90"
+                }`}
               >
-                {generatePack.isPending ? "Generating..." : "Generate Story Pack"}
+                {generatePack.isPending ? "Generating..." : generationButtonLabel}
               </button>
+              <p className="w-full text-right text-xs text-muted-foreground">
+                🔒 Source material is processed via Anthropic&apos;s Claude API with zero
+                data retention.{" "}
+                <Link
+                  href={`/workspace/${workspaceId}/settings/data-processing`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  View AI processing policy
+                </Link>
+              </p>
             </div>
           )}
         </div>
+        {selectedSourceIds.size > 0 && (
+          <div className="mb-4">
+            <SourceReadinessPanel
+              report={readiness.data}
+              isLoading={readiness.isLoading}
+            />
+          </div>
+        )}
+
+        <GenerationProgress
+          active={generatePack.isPending}
+          estimatedTimeLabel={readiness.data?.estimatedGenerationTime}
+        />
+
         <ul className="space-y-2">
           {project?.packs.map((pack) => (
             <li key={pack.id}>
@@ -311,6 +367,7 @@ export function ProjectPageClient({
 
       {showAddSource && (
         <AddSourceModal
+          workspaceId={workspaceId}
           projectId={projectId}
           onClose={() => setShowAddSource(false)}
           onSuccess={() => {
