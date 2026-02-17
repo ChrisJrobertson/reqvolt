@@ -12,6 +12,9 @@ import { notificationRouter } from "./notification";
 import { notificationPreferenceRouter } from "./notification-preference";
 import { apiKeyRouter } from "./api-key";
 import { jiraRouter } from "./jira";
+import { feedbackRouter } from "./feedback";
+import { aiProcessingLogRouter } from "./ai-processing-log";
+import { adminQualityRouter } from "./admin-quality";
 
 export const appRouter = router({
   workspace: workspaceRouter,
@@ -27,6 +30,9 @@ export const appRouter = router({
   notificationPreference: notificationPreferenceRouter,
   apiKey: apiKeyRouter,
   jira: jiraRouter,
+  feedback: feedbackRouter,
+  aiProcessingLog: aiProcessingLogRouter,
+  adminQuality: adminQualityRouter,
 });
 
 export type AppRouter = typeof appRouter;

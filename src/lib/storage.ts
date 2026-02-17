@@ -118,3 +118,16 @@ export async function putObject(
     })
   );
 }
+
+export async function createPresignedDownloadUrl(params: {
+  objectKey: string;
+  expiresIn?: number;
+}): Promise<string> {
+  const client = getS3Client();
+  const bucket = env.R2_BUCKET_NAME;
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: params.objectKey,
+  });
+  return getSignedUrl(client, command, { expiresIn: params.expiresIn ?? 300 });
+}

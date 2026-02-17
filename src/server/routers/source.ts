@@ -4,6 +4,7 @@ import { SourceType } from "@prisma/client";
 import { db } from "../db";
 import { sourceService } from "../services/source";
 import { auditService } from "../services/audit";
+import { invalidateReadinessCache } from "../services/readiness-cache";
 
 const sourceTypeSchema = z.nativeEnum(SourceType);
 
@@ -35,6 +36,7 @@ export const sourceRouter = router({
         input.projectId,
         input
       );
+      await invalidateReadinessCache(input.projectId);
       await auditService.log({
         workspaceId: ctx.workspaceId,
         userId: ctx.userId,
@@ -59,6 +61,7 @@ export const sourceRouter = router({
         input.projectId,
         input
       );
+      await invalidateReadinessCache(input.projectId);
       await auditService.log({
         workspaceId: ctx.workspaceId,
         userId: ctx.userId,
@@ -112,7 +115,14 @@ export const sourceRouter = router({
   delete: workspaceProcedure
     .input(z.object({ sourceId: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const source = await db.source.findFirst({
+        where: { id: input.sourceId, workspaceId: ctx.workspaceId },
+        select: { projectId: true },
+      });
       await sourceService.softDelete(input.sourceId, ctx.workspaceId);
+      if (source?.projectId) {
+        await invalidateReadinessCache(source.projectId);
+      }
       await auditService.log({
         workspaceId: ctx.workspaceId,
         userId: ctx.userId,

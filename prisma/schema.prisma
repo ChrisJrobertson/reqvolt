@@ -104,6 +104,17 @@ enum ApprovalStatus {
   rejected
 }
 
+enum StoryRating {
+  UP
+  DOWN
+}
+
+enum PackRating {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
 model Workspace {
   id        String   @id @default(cuid())
   name      String
@@ -115,6 +126,11 @@ model Workspace {
   jiraRejectionStatuses   String[] @default(["Rejected", "Won't Do", "Cancelled"])
   jiraSignalWords         String[] @default(["unclear", "ambiguous", "question", "assumption", "wrong", "missing", "confused", "what does", "what do you mean"])
   mondayRejectionStatuses String[] @default(["Stuck", "Rejected"])
+  aiGenerationEnabled      Boolean  @default(true)
+  aiQaAutoFixEnabled       Boolean  @default(true)
+  aiSelfReviewEnabled      Boolean  @default(true)
+  aiTopicExtractionEnabled Boolean  @default(true)
+  aiEmbeddingEnabled       Boolean  @default(true)
 
   members   WorkspaceMember[]
   projects  Project[]
@@ -128,6 +144,9 @@ model Workspace {
   apiKeys ApiKey[]
   notifications Notification[]
   notificationPreferences NotificationPreference[]
+  storyFeedback StoryFeedback[]
+  packFeedback PackFeedback[]
+  modelUsage   ModelUsage[]
 }
 
 model WorkspaceMember {
@@ -225,6 +244,7 @@ model Pack {
   storyExports StoryExport[]
   deliveryFeedback DeliveryFeedback[]
   changeImpacts SourceChangeImpact[]
+  packFeedback PackFeedback[]
   @@index([projectId])
   @@index([workspaceId])
 }
@@ -242,6 +262,11 @@ model PackVersion {
   risks           Json?
   generationConfig Json?
   changeAnalysis  Json?
+  generationConfidence Json?
+  confidenceScore Int?
+  confidenceLevel String?
+  selfReviewRun   Boolean  @default(false)
+  selfReviewPassed Boolean?
   editLockUserId  String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -272,6 +297,7 @@ model Story {
   mondayPushLogs     MondayPushLog[]
   storyExports       StoryExport[]
   deliveryFeedback   DeliveryFeedback[]
+  storyFeedback      StoryFeedback[]
   @@index([packVersionId])
 }
 
@@ -660,4 +686,52 @@ model NotificationPreference {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
+}
+
+model StoryFeedback {
+  id          String      @id @default(cuid())
+  storyId     String
+  story       Story       @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  packId      String
+  pack        Pack        @relation(fields: [packId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  rating      StoryRating
+  createdAt   DateTime    @default(now())
+
+  @@unique([storyId, userId])
+  @@index([packId])
+  @@index([workspaceId, createdAt])
+}
+
+model PackFeedback {
+  id          String    @id @default(cuid())
+  packId      String
+  pack        Pack      @relation(fields: [packId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  rating      PackRating
+  comment     String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([packId, userId])
+  @@index([workspaceId, createdAt])
+}
+
+model ModelUsage {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  model        String
+  task         String
+  inputTokens  Int
+  outputTokens Int
+  durationMs   Int
+  packId       String?
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([task, createdAt])
 }

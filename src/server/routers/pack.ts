@@ -8,6 +8,11 @@ import { runQARules } from "../services/qa-rules";
 import { auditService } from "../services/audit";
 import { computeAndPersistPackHealth } from "../services/health";
 import { buildTraceabilityGraphData } from "../services/traceability-graph";
+import { assessSourceReadiness } from "../services/source-readiness";
+import {
+  getCachedReadiness,
+  setCachedReadiness,
+} from "../services/readiness-cache";
 import { inngest } from "../inngest/client";
 import Redis from "ioredis";
 import { env } from "@/lib/env";
@@ -378,6 +383,33 @@ export const packRouter = router({
       });
 
       return result;
+    }),
+
+  assessReadiness: workspaceProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        sourceIds: z.array(z.string()).min(1),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const project = await db.project.findFirst({
+        where: { id: input.projectId, workspaceId: ctx.workspaceId },
+        select: { id: true },
+      });
+      if (!project) throw new Error("Project not found");
+
+      const cached = await getCachedReadiness(input.projectId, input.sourceIds);
+      if (cached) return cached;
+
+      const report = await assessSourceReadiness({
+        workspaceId: ctx.workspaceId,
+        projectId: input.projectId,
+        sourceIds: input.sourceIds,
+        userId: ctx.userId,
+      });
+      await setCachedReadiness(input.projectId, input.sourceIds, report);
+      return report;
     }),
 
   updateStory: workspaceProcedure

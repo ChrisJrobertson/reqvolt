@@ -7,10 +7,7 @@ import {
   determineSeverity,
   type SourceChunkInfo,
 } from "@/lib/source-diff";
-import Anthropic from "@anthropic-ai/sdk";
-import { getModelForTask } from "@/server/services/model-router";
-
-const anthropic = new Anthropic();
+import { getAnalysisClient } from "@/lib/ai/model-router";
 
 interface SourceVersionCreatedEvent {
   sourceId: string;
@@ -191,21 +188,21 @@ export const detectSourceChanges = inngest.createFunction(
 
     async function generateImpactSummary(): Promise<string | null> {
       try {
-        const model = getModelForTask("impact-summary");
-        const response = await anthropic.messages.create({
-          model,
-          max_tokens: 100,
-          system:
+        const analysisClient = getAnalysisClient();
+        const response = await analysisClient.call({
+          workspaceId,
+          userId: "system",
+          task: "impact_summary",
+          packId: undefined,
+          maxTokens: 120,
+          systemPrompt:
             "Summarise how source changes affect requirements. One sentence, UK English.",
-          messages: [
-            {
-              role: "user",
-              content: `Source: ${source?.name ?? "Unknown"}. Changes: ${diffSummary}. Affected stories: ${storyTitles}`,
-            },
-          ],
+          userPrompt: `Source: ${source?.name ?? "Unknown"}. Changes: ${diffSummary}. Affected stories: ${storyTitles}`,
+          sourceIds: [sourceId],
+          sourceChunksSent: newChunkIds.length,
         });
-        const text = response.content.find((c) => c.type === "text");
-        return typeof text === "object" && "text" in text ? text.text : null;
+        if (response.skipped) return null;
+        return response.text || null;
       } catch {
         return null;
       }

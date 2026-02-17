@@ -1,17 +1,14 @@
 /**
  * Iterative pack refresh: integrate new sources, produce change analysis.
  */
-import Anthropic from "@anthropic-ai/sdk";
 import { db } from "../db";
 import { embedText } from "./embedding";
 import { retrieveChunks } from "./retrieval";
 import { buildRefreshPrompt } from "../prompts/refresh";
 import { runQARules } from "./qa-rules";
-import { getLangfuse } from "../lib/langfuse";
-import { getModelForTask } from "./model-router";
+import { getCachedAIControls, getGenerationClient } from "@/lib/ai/model-router";
 import { checkTokenBudget, addTokenUsage } from "./token-budget";
-
-const anthropic = new Anthropic();
+import { assessGenerationQuality } from "./generation-quality-gate";
 
 export interface RefreshPackInput {
   packId: string;
@@ -54,10 +51,32 @@ export async function refreshPack(input: RefreshPackInput) {
     throw new Error("No new sources. Add sources to the project first.");
   }
 
-  const queryEmbedding = await embedText(
-    "Refresh story pack with new discovery evidence"
-  );
-  const chunks = await retrieveChunks(sourceIds, queryEmbedding, 30);
+  const controls = await getCachedAIControls(workspaceId);
+  const chunks = controls.aiEmbeddingEnabled
+    ? await (async () => {
+        const queryEmbedding = await embedText(
+          "Refresh story pack with new discovery evidence",
+          {
+            workspaceId,
+            packId,
+            userId: "system",
+            sourceIds,
+            task: "retrieval_query_embedding",
+          }
+        );
+        return retrieveChunks(sourceIds, queryEmbedding, 30);
+      })()
+    : await db.sourceChunk.findMany({
+        where: { sourceId: { in: sourceIds } },
+        select: {
+          id: true,
+          content: true,
+          sourceId: true,
+          chunkIndex: true,
+        },
+        orderBy: { chunkIndex: "asc" },
+        take: 30,
+      });
 
   if (chunks.length === 0) {
     throw new Error("No chunks found for selected sources.");
@@ -95,38 +114,27 @@ export async function refreshPack(input: RefreshPackInput) {
     userNotes,
   });
 
-  const model = getModelForTask("refresh");
+  const generationClient = getGenerationClient();
+  const model = generationClient.model;
   const budgetCheck = await checkTokenBudget(workspaceId);
   if (!budgetCheck.ok) throw new Error(budgetCheck.error);
 
-  const start = Date.now();
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 4096,
-    messages: [{ role: "user", content: prompt }],
+  const response = await generationClient.call({
+    workspaceId,
+    packId,
+    userId: "system",
+    task: "pack_generation",
+    userPrompt: prompt,
+    maxTokens: 4096,
+    sourceIds,
+    sourceChunksSent: chunks.length,
   });
+  if (response.skipped) {
+    throw new Error(response.reason ?? "AI refresh skipped for this workspace");
+  }
 
-  const inputTokens = response.usage?.input_tokens ?? 0;
-  const outputTokens = response.usage?.output_tokens ?? 0;
-  await addTokenUsage(workspaceId, inputTokens, outputTokens);
-
-  getLangfuse()?.trace({
-    name: "pack.refresh",
-    metadata: {
-      model,
-      workspaceId,
-      packId,
-      inputTokens,
-      outputTokens,
-      latencyMs: Date.now() - start,
-    },
-  });
-
-  const textContent = response.content.find((c) => c.type === "text");
-  const rawJson =
-    typeof textContent === "object" && "text" in textContent
-      ? textContent.text
-      : "";
+  await addTokenUsage(workspaceId, response.inputTokens, response.outputTokens);
+  const rawJson = response.text;
 
   const jsonMatch = rawJson.match(/\{[\s\S]*\}/);
   const jsonStr = jsonMatch ? jsonMatch[0] : rawJson;
@@ -216,6 +224,21 @@ export async function refreshPack(input: RefreshPackInput) {
   }
 
   await runQARules(packVersion.id);
+
+  try {
+    await assessGenerationQuality(packId, packVersion.id);
+  } catch {
+    await db.packVersion.update({
+      where: { id: packVersion.id },
+      data: {
+        generationConfidence: {
+          note: "Quality assessment unavailable for this generation. Manual review recommended.",
+        },
+        selfReviewRun: false,
+        selfReviewPassed: null,
+      },
+    });
+  }
 
   return { packId, packVersionId: packVersion.id };
 }

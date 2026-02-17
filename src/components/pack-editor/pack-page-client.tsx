@@ -6,6 +6,9 @@ import { PackEditor } from "./pack-editor";
 import { PackHealthPanel } from "./pack-health-panel";
 import { SourceChangeImpactBanner } from "./SourceChangeImpactBanner";
 import { TraceabilityMini } from "@/components/pack/TraceabilityMini";
+import { GenerationConfidenceBar } from "@/components/pack/GenerationConfidenceBar";
+import type { QualityReport } from "@/lib/quality/types";
+import { PackFeedbackPrompt } from "@/components/pack/PackFeedbackPrompt";
 
 interface Source {
   id: string;
@@ -56,6 +59,9 @@ interface PackVersion {
   decisions: unknown;
   risks: unknown;
   changeAnalysis: ChangeAnalysis | null;
+  generationConfidence?: unknown;
+  confidenceScore?: number | null;
+  confidenceLevel?: string | null;
   qaFlags?: QAFlag[];
   stories: Array<{
     id: string;
@@ -105,6 +111,10 @@ export function PackPageClient({
 
   const latestVersion = displayPack.versions[0];
   const sourceIds = (latestVersion?.sourceIds as string[] | undefined) ?? [];
+  const latestConfidence =
+    selectedVersionIndex === 0
+      ? ((latestVersion?.generationConfidence as QualityReport | undefined) ?? null)
+      : null;
 
   return (
     <>
@@ -125,6 +135,15 @@ export function PackPageClient({
       <div className="mb-6">
         <PackHealthPanel packId={pack.id} />
       </div>
+      {selectedVersionIndex === 0 && (
+        <div className="mb-6">
+          <GenerationConfidenceBar
+            report={latestConfidence}
+            score={latestVersion?.confidenceScore ?? null}
+            level={latestVersion?.confidenceLevel ?? null}
+          />
+        </div>
+      )}
       <div className="mb-6">
         <TraceabilityMini
           workspaceId={workspaceId}
@@ -137,6 +156,7 @@ export function PackPageClient({
         evidenceMapByVersionId={evidenceMapByVersionId}
         selectedVersionIndex={selectedVersionIndex}
       />
+      {selectedVersionIndex === 0 && <PackFeedbackPrompt packId={pack.id} />}
     </>
   );
 }

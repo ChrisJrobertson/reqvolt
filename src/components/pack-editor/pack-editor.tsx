@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { DeliveryFeedbackPanel } from "./DeliveryFeedbackPanel";
 import { TranscriptEvidenceDisplay } from "./TranscriptEvidenceDisplay";
+import { StoryFeedbackToggle } from "@/components/pack/StoryFeedbackToggle";
 
 interface EvidenceLink {
   id: string;
@@ -138,6 +139,15 @@ export function PackEditor({
   const runQa = trpc.pack.runQa.useMutation({
     onSuccess: () => router.refresh(),
   });
+  const isLatestVersion = selectedVersionIndex === 0;
+  const aiControls = trpc.workspace.getAIProcessingControls.useQuery();
+  const storyFeedbackQuery = trpc.feedback.getStoryFeedback.useQuery(
+    { packId: pack.id },
+    { enabled: isLatestVersion }
+  );
+  const rateStoryFeedback = trpc.feedback.rateStory.useMutation({
+    onSuccess: () => storyFeedbackQuery.refetch(),
+  });
 
   const scheduleQaRerun = useCallback((packVersionId: string) => {
     if (qaRerunTimeoutRef.current) clearTimeout(qaRerunTimeoutRef.current);
@@ -196,6 +206,7 @@ export function PackEditor({
     evidenceTab && evidenceEntityId
       ? evidenceMap[evidenceTab]?.[evidenceEntityId] ?? []
       : [];
+  const storyFeedbackMap = storyFeedbackQuery.data ?? {};
 
   const navItems = [
     { id: "summary", label: "Summary" },
@@ -285,6 +296,12 @@ export function PackEditor({
                 This version is locked. Unlock to edit.
               </p>
             )}
+            {aiControls.data?.aiEmbeddingEnabled === false && (
+              <p className="text-sm text-amber-700 bg-amber-50 p-2 rounded mb-4">
+                Evidence linking requires embeddings. Embedding generation is currently disabled
+                for this workspace.
+              </p>
+            )}
             {latestVersion.stories.map((story) => (
               <div
                 key={story.id}
@@ -342,6 +359,14 @@ export function PackEditor({
                     >
                       Delete
                     </button>
+                    )}
+                    {isLatestVersion && (
+                      <StoryFeedbackToggle
+                        rating={storyFeedbackMap[story.id]?.currentUserRating ?? null}
+                        onRate={async (rating) => {
+                          await rateStoryFeedback.mutateAsync({ storyId: story.id, rating });
+                        }}
+                      />
                     )}
                   </div>
                 </div>
