@@ -5,6 +5,7 @@ import { PackHeader } from "./pack-header";
 import { PackEditor } from "./pack-editor";
 import { PackHealthPanel } from "./pack-health-panel";
 import { SourceChangeImpactBanner } from "./SourceChangeImpactBanner";
+import { TraceabilityMini } from "@/components/pack/TraceabilityMini";
 
 interface Source {
   id: string;
@@ -123,6 +124,13 @@ export function PackPageClient({
       />
       <div className="mb-6">
         <PackHealthPanel packId={pack.id} />
+      </div>
+      <div className="mb-6">
+        <TraceabilityMini
+          workspaceId={workspaceId}
+          projectId={projectId}
+          packId={pack.id}
+        />
       </div>
       <PackEditor
         pack={displayPack}

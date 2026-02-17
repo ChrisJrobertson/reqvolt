@@ -7,9 +7,11 @@ import { refreshPack } from "../services/refresh";
 import { runQARules } from "../services/qa-rules";
 import { auditService } from "../services/audit";
 import { computeAndPersistPackHealth } from "../services/health";
+import { buildTraceabilityGraphData } from "../services/traceability-graph";
 import { inngest } from "../inngest/client";
 import Redis from "ioredis";
 import { env } from "@/lib/env";
+import type { TraceabilityGraphPayload } from "@/lib/traceability/graph-types";
 import crypto from "node:crypto";
 
 let _redis: Redis | null = null;
@@ -92,6 +94,59 @@ export const packRouter = router({
       });
       if (!pack) throw new Error("Pack not found");
       return pack;
+    }),
+
+  getTraceabilityGraph: workspaceProcedure
+    .input(
+      z.object({
+        packId: z.string(),
+        packVersionId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const versionMeta = await db.packVersion.findFirst({
+        where: {
+          ...(input.packVersionId ? { id: input.packVersionId } : {}),
+          pack: {
+            id: input.packId,
+            workspaceId: ctx.workspaceId,
+          },
+        },
+        orderBy: input.packVersionId ? undefined : { versionNumber: "desc" },
+        select: {
+          id: true,
+          versionNumber: true,
+        },
+      });
+
+      if (!versionMeta) {
+        throw new Error("Pack not found");
+      }
+
+      const redis = getRedis();
+      const cacheKey = `trace:${input.packId}:${versionMeta.versionNumber}`;
+      if (redis) {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          try {
+            return JSON.parse(cached) as TraceabilityGraphPayload;
+          } catch {
+            // Ignore malformed cache values and rebuild payload.
+          }
+        }
+      }
+
+      const payload = await buildTraceabilityGraphData({
+        workspaceId: ctx.workspaceId,
+        packId: input.packId,
+        packVersionId: versionMeta.id,
+      });
+
+      if (redis) {
+        await redis.setex(cacheKey, 60 * 15, JSON.stringify(payload));
+      }
+
+      return payload;
     }),
 
   getHealth: workspaceProcedure

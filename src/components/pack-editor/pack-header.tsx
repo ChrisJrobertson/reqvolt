@@ -180,6 +180,12 @@ export function PackHeader({
             </span>
           )}
           <div className="ml-auto flex gap-2 flex-wrap">
+            <Link
+              href={`/workspace/${workspaceId}/projects/${projectId}/packs/${pack.id}/traceability`}
+              className="px-4 py-2 border rounded-lg hover:bg-muted text-sm"
+            >
+              Traceability
+            </Link>
             {selectedVersion && (
               <>
                 <a
