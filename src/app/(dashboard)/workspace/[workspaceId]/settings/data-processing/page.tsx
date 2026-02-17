@@ -37,7 +37,6 @@ export default async function DataProcessingPage({
         </p>
       </header>
       <DataProcessingPageClient
-        workspaceId={workspaceId}
         isAdmin={member.role === "Admin"}
       />
     </div>

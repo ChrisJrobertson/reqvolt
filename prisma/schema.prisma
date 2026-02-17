@@ -244,6 +244,7 @@ model Pack {
   storyExports StoryExport[]
   deliveryFeedback DeliveryFeedback[]
   changeImpacts SourceChangeImpact[]
+  storyFeedback StoryFeedback[]
   packFeedback PackFeedback[]
   @@index([projectId])
   @@index([workspaceId])

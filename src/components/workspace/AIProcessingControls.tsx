@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
 type AIControlState = {
@@ -26,15 +26,13 @@ function labelToValue(value: "Enabled" | "Disabled"): boolean {
 export function AIProcessingControls({ isAdmin }: AIProcessingControlsProps) {
   const query = trpc.workspace.getAIProcessingControls.useQuery();
   const update = trpc.workspace.updateAIProcessingControls.useMutation({
-    onSuccess: () => query.refetch(),
+    onSuccess: () => {
+      setOverrides({});
+      query.refetch();
+    },
   });
-  const [draft, setDraft] = useState<AIControlState | null>(null);
-
-  useEffect(() => {
-    if (query.data) {
-      setDraft(query.data);
-    }
-  }, [query.data]);
+  const [overrides, setOverrides] = useState<Partial<AIControlState>>({});
+  const draft = query.data ? { ...query.data, ...overrides } : null;
 
   if (!draft) {
     return (
@@ -101,14 +99,10 @@ export function AIProcessingControls({ isAdmin }: AIProcessingControlsProps) {
               disabled={!isAdmin || update.isPending}
               onChange={(event) => {
                 const nextValue = labelToValue(event.target.value as "Enabled" | "Disabled");
-                setDraft((current) =>
-                  current
-                    ? {
-                        ...current,
-                        [row.key]: nextValue,
-                      }
-                    : current
-                );
+                setOverrides((current) => ({
+                  ...current,
+                  [row.key]: nextValue,
+                }));
               }}
               className="rounded-md border px-2 py-1 text-sm disabled:opacity-60"
             >

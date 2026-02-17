@@ -209,6 +209,8 @@ export async function generatePack(input: GeneratePackInput) {
   const chunkIdByIndex = new Map<number, string>();
   chunks.forEach((c, i) => chunkIdByIndex.set(i, c.id));
   const chunkIdSet = new Set(chunks.map((chunk) => chunk.id));
+  const isKnownChunkId = (id: unknown): id is string =>
+    typeof id === "string" && chunkIdSet.has(id);
 
   for (let i = 0; i < (parsed.stories ?? []).length; i++) {
     const s = parsed.stories![i]!;
@@ -227,7 +229,7 @@ export async function generatePack(input: GeneratePackInput) {
       s.source_references ??
       s.evidenceChunkIndices?.map((idx) => chunkIdByIndex.get(idx)).filter(Boolean) ??
       []
-    ).filter((id): id is string => chunkIdSet.has(id));
+    ).filter(isKnownChunkId);
     for (const chunkId of storyEvidenceChunkIds) {
       await db.evidenceLink.create({
         data: {
@@ -257,7 +259,7 @@ export async function generatePack(input: GeneratePackInput) {
         ac.sourceReferences ??
         ac.evidenceChunkIndices?.map((idx) => chunkIdByIndex.get(idx)).filter(Boolean) ??
         []
-      ).filter((id): id is string => chunkIdSet.has(id));
+      ).filter(isKnownChunkId);
 
       for (const chunkId of acEvidenceChunkIds) {
         await db.evidenceLink.create({

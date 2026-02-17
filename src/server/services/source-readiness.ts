@@ -237,7 +237,6 @@ export async function assessSourceReadiness(
     duplicatePercentage = chunks.length
       ? Math.round((duplicatedChunkIds.size / chunks.length) * 100)
       : 0;
-  }
 
     if (duplicatePercentage > 30) {
       checks.push({

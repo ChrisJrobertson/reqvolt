@@ -47,10 +47,7 @@ export function GenerationProgress({
   const totalDurationMs = stages.reduce((sum, stage) => sum + stage.durationSec * 1000, 0);
 
   useEffect(() => {
-    if (!active) {
-      setElapsedMs(0);
-      return;
-    }
+    if (!active) return;
     const startedAt = Date.now();
     const interval = setInterval(() => {
       setElapsedMs(Date.now() - startedAt);

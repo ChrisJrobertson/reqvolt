@@ -1,28 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { AIProcessingControls } from "@/components/workspace/AIProcessingControls";
 
 interface DataProcessingPageClientProps {
-  workspaceId: string;
   isAdmin: boolean;
 }
 
 export function DataProcessingPageClient({
-  workspaceId,
   isAdmin,
 }: DataProcessingPageClientProps) {
   const [taskType, setTaskType] = useState("");
   const [model, setModel] = useState("");
   const [offset, setOffset] = useState(0);
   const limit = 50;
-  const dateTo = useMemo(() => new Date().toISOString(), []);
-  const dateFrom = useMemo(
-    () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    []
-  );
+  const [dateBounds] = useState(() => {
+    const toDate = new Date();
+    const fromDate = new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return {
+      dateFrom: fromDate.toISOString(),
+      dateTo: toDate.toISOString(),
+    };
+  });
+  const dateTo = dateBounds.dateTo;
+  const dateFrom = dateBounds.dateFrom;
 
   const logQuery = trpc.aiProcessingLog.list.useQuery({
     dateFrom,

@@ -1,4 +1,5 @@
 import { db } from "@/server/db";
+import type { Prisma } from "@prisma/client";
 import { embedText } from "@/server/services/embedding";
 import { inngest } from "@/server/inngest/client";
 import {
@@ -163,7 +164,6 @@ export async function assessGenerationQuality(
     select: { id: true, sourceId: true, content: true },
     orderBy: { chunkIndex: "asc" },
   });
-  const sourceChunkMap = new Map(sourceChunks.map((chunk) => [chunk.id, chunk]));
 
   const storyIds = version.stories.map((story) => story.id);
   const acIds = version.stories.flatMap((story) => story.acceptanceCriteria.map((ac) => ac.id));
@@ -201,7 +201,7 @@ export async function assessGenerationQuality(
     benefit: story.soThat,
     acceptanceCriteria: story.acceptanceCriteria.map((ac) => {
       const refs = (evidenceByAc.get(ac.id) ?? []).map((link) => link.sourceChunkId);
-      const strongest =
+      const strongest: "direct" | "inferred" | "assumption" =
         refs.length === 0
           ? "assumption"
           : (evidenceByAc.get(ac.id) ?? []).some((link) => link.confidence === "high")
@@ -489,7 +489,7 @@ export async function assessGenerationQuality(
   await db.packVersion.update({
     where: { id: version.id },
     data: {
-      generationConfidence: report,
+      generationConfidence: report as unknown as Prisma.InputJsonValue,
       confidenceScore,
       confidenceLevel,
       selfReviewRun: !!selfReviewCall,

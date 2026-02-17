@@ -11,7 +11,10 @@ const DISPLAY_DELAY_MS = 60_000;
 
 export function PackFeedbackPrompt({ packId }: PackFeedbackPromptProps) {
   const [visible, setVisible] = useState(false);
-  const [dismissedThisSession, setDismissedThisSession] = useState(false);
+  const [dismissedThisSession, setDismissedThisSession] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(`pack-feedback-skip:${packId}`) === "1";
+  });
   const query = trpc.feedback.getPackFeedback.useQuery({ packId });
   const ratePack = trpc.feedback.ratePack.useMutation({
     onSuccess: () => {
@@ -24,14 +27,10 @@ export function PackFeedbackPrompt({ packId }: PackFeedbackPromptProps) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const skipped = window.sessionStorage.getItem(sessionKey) === "1";
-    if (skipped) {
-      setDismissedThisSession(true);
-      return;
-    }
+    if (dismissedThisSession) return;
     const timer = setTimeout(() => setVisible(true), DISPLAY_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [sessionKey]);
+  }, [dismissedThisSession, sessionKey]);
 
   if (dismissedThisSession || !visible) return null;
   if (query.data?.currentUserRating) return null;
