@@ -6,10 +6,12 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { auth } from "@clerk/nextjs/server";
 import * as Sentry from "@sentry/nextjs";
+import { assertEnvValid } from "@/lib/env";
 import { db } from "./db";
 import { WorkspaceRole } from "@prisma/client";
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
+  assertEnvValid();
   const { userId } = await auth();
   const workspaceId = opts.headers.get("x-workspace-id");
 

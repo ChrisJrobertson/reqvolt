@@ -25,3 +25,24 @@
 
 ## Environment Variables
 See `.env.example` for full list. Required vars throw on missing. Optional vars (REDIS_URL, SENTRY_DSN, LANGFUSE_*, MONDAY_API_TOKEN) default to undefined.
+
+## Production Deployment (Vercel)
+
+Add these environment variables in **Vercel → Project → Settings → Environment Variables** (for Production, Preview, or both):
+
+**Required:**
+- `DATABASE_URL` — Neon connection string (pooler)
+- `DIRECT_URL` — Neon direct connection (optional but recommended)
+- `CLERK_SECRET_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_ENDPOINT`
+- `INNGEST_SIGNING_KEY` — from Inngest dashboard
+
+**Optional:** `ADMIN_USER_IDS`, `REDIS_URL`, `RESEND_API_KEY`, `SENTRY_DSN`, etc. (see `.env.example`)
+
+**Runtime validation:** On first tRPC or Inngest request in production, if any required var is missing, the app throws with a clear error listing the missing vars.

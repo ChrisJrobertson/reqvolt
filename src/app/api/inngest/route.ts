@@ -1,4 +1,5 @@
 import { serve } from "inngest/next";
+import { assertEnvValid } from "@/lib/env";
 import { inngest } from "@/server/inngest/client";
 import { extractSourceText } from "@/server/inngest/functions/extract-source-text";
 import { replaceExtractSourceText } from "@/server/inngest/functions/replace-extract-source-text";
@@ -19,7 +20,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-export const { GET, POST, PUT } = serve({
+const handler = serve({
   client: inngest,
   functions: [
     extractSourceText,
@@ -38,3 +39,16 @@ export const { GET, POST, PUT } = serve({
     processInboundEmail,
   ],
 });
+
+export const GET = (req: Request, ctx: unknown) => {
+  assertEnvValid();
+  return handler.GET(req as Parameters<typeof handler.GET>[0], ctx);
+};
+export const POST = (req: Request, ctx: unknown) => {
+  assertEnvValid();
+  return handler.POST(req as Parameters<typeof handler.POST>[0], ctx);
+};
+export const PUT = (req: Request, ctx: unknown) => {
+  assertEnvValid();
+  return handler.PUT(req as Parameters<typeof handler.PUT>[0], ctx);
+};

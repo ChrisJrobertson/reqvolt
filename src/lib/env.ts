@@ -92,4 +92,19 @@ function validateClientEnv() {
 }
 
 export const env = validateServerEnv();
+
+/** Call at runtime (e.g. first tRPC/API request) to fail fast if env is invalid. Skips during build. */
+let _asserted = false;
+export function assertEnvValid(): void {
+  if (_asserted) return;
+  _asserted = true;
+  if (process.env.NODE_ENV !== "production") return;
+  const parsed = serverSchema.safeParse(process.env);
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid production env: ${JSON.stringify(parsed.error.flatten().fieldErrors)}`
+    );
+  }
+}
+
 export const clientEnv = validateClientEnv();
