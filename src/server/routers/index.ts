@@ -18,6 +18,8 @@ import { dashboardRouter } from "./dashboard";
 import { searchRouter } from "./search";
 import { onboardingRouter } from "./onboarding";
 import { feedbackRouter } from "./feedback";
+import { adminQualityRouter } from "./admin-quality";
+import { aiProcessingLogRouter } from "./ai-processing-log";
 
 export const appRouter = router({
   workspace: workspaceRouter,
@@ -39,6 +41,8 @@ export const appRouter = router({
   search: searchRouter,
   onboarding: onboardingRouter,
   feedback: feedbackRouter,
+  adminQuality: adminQualityRouter,
+  aiProcessingLog: aiProcessingLogRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -315,6 +315,12 @@ export function ProjectPageClient({
           )}
         </div>
 
+        {completedSources.length > 0 && (
+          <p className="text-xs text-muted-foreground mb-2">
+            🔒 Source material is processed via Anthropic&apos;s Claude API with zero data retention.{" "}
+            <a href={`/workspace/${workspaceId}/settings/data-processing`} className="underline">View AI processing policy</a>
+          </p>
+        )}
         {selectedSourceIds.size > 0 && (
           <div className="mb-4">
             <SourceReadinessPanel
@@ -325,10 +331,6 @@ export function ProjectPageClient({
                 setReadinessWarnings(r.overallStatus === "warnings");
               }}
             />
-            <p className="text-xs text-muted-foreground mt-2">
-              🔒 Source material is processed via Anthropic&apos;s Claude API with zero data retention.{" "}
-              <a href={`/workspace/${workspaceId}/settings`} className="underline">View AI processing policy</a>
-            </p>
           </div>
         )}
 
@@ -380,6 +382,7 @@ export function ProjectPageClient({
       {showAddSource && (
         <AddSourceModal
           projectId={projectId}
+          workspaceId={workspaceId}
           onClose={() => setShowAddSource(false)}
           onSuccess={() => {
             utils.project.getById.invalidate({ projectId });

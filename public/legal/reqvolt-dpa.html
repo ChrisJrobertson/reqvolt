@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reqvolt Data Processing Agreement</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+    h1 { font-size: 1.5rem; margin-top: 2rem; }
+    h2 { font-size: 1.2rem; margin-top: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    th { background: #f5f5f5; }
+    .signatures { margin-top: 3rem; }
+    @media print { body { margin: 0; padding: 1rem; } }
+  </style>
+</head>
+<body>
+  <h1>REQVOLT — DATA PROCESSING AGREEMENT</h1>
+  <p>This Data Processing Agreement ("DPA") forms part of the agreement between the Customer ("Data Controller") and SynqForge LTD trading as Reqvolt ("Data Processor") for the provision of the Reqvolt platform.</p>
+
+  <h2>1. DEFINITIONS</h2>
+  <p><strong>Personal Data</strong>: Any information relating to an identified or identifiable natural person, as defined in UK GDPR and EU GDPR.</p>
+  <p><strong>Processing</strong>: Any operation performed on Personal Data.</p>
+  <p><strong>Data Subject</strong>: An identified or identifiable natural person to whom Personal Data relates.</p>
+  <p><strong>Sub-processor</strong>: Any third party engaged by the Data Processor to process Personal Data on behalf of the Data Controller.</p>
+
+  <h2>2. SCOPE OF PROCESSING</h2>
+  <p>Reqvolt processes Customer Data solely for the purpose of providing the Reqvolt requirements management platform. Processing activities include: source document storage, text extraction, AI-powered story generation, quality analysis, and export generation.</p>
+
+  <h2>3. CUSTOMER DATA CATEGORIES</h2>
+  <ul>
+    <li>Source documents (uploaded by Customer)</li>
+    <li>Generated requirements (stories, acceptance criteria)</li>
+    <li>User identity data (name, email via Clerk authentication)</li>
+    <li>Workspace and project metadata</li>
+  </ul>
+
+  <h2>4. AI PROCESSING SPECIFICS</h2>
+  <p>4.1 Source text chunks are transmitted to Anthropic's Claude API for story generation, quality review, and auto-fix processing.</p>
+  <p>4.2 Anthropic does not retain API inputs or outputs and does not use them for model training (per Anthropic Commercial API Terms).</p>
+  <p>4.3 Text embeddings are generated via OpenAI's API, which does not retain API inputs or use them for training.</p>
+  <p>4.4 The Customer may disable any or all AI processing features via Workspace Settings without affecting data storage.</p>
+
+  <h2>5. SUB-PROCESSORS</h2>
+  <table>
+    <tr><th>Service</th><th>Purpose</th><th>Retention</th></tr>
+    <tr><td>Anthropic</td><td>AI story generation</td><td>None</td></tr>
+    <tr><td>OpenAI</td><td>Text embeddings</td><td>None</td></tr>
+    <tr><td>Neon</td><td>Primary database</td><td>Until deletion</td></tr>
+    <tr><td>Cloudflare R2</td><td>File storage</td><td>Until deletion</td></tr>
+    <tr><td>Clerk</td><td>Authentication</td><td>Until account deletion</td></tr>
+    <tr><td>Vercel</td><td>Application hosting</td><td>Transient</td></tr>
+    <tr><td>Inngest</td><td>Background jobs</td><td>7 days</td></tr>
+    <tr><td>Upstash Redis</td><td>Caching</td><td>TTL-based</td></tr>
+  </table>
+  <p>The Processor shall notify the Controller of any changes to sub-processors at least 30 days in advance.</p>
+
+  <h2>6. DATA SECURITY</h2>
+  <p>All data encrypted in transit (TLS 1.3); database and file storage encryption at rest; authentication via Clerk; role-based access control within workspaces.</p>
+
+  <h2>7. DATA SUBJECT RIGHTS</h2>
+  <p>The Processor supports the Controller in fulfilling data subject requests. Data export and deletion tools are available in Workspace Settings.</p>
+
+  <h2>8. DATA RETENTION</h2>
+  <p>Customer Data is retained for the duration of the subscription. On termination: deleted within 30 days. The Customer may request immediate data deletion at any time.</p>
+
+  <h2>9. DATA BREACH NOTIFICATION</h2>
+  <p>The Processor shall notify the Controller without undue delay (and in any event within 72 hours) upon becoming aware of a personal data breach.</p>
+
+  <h2>10. AUDIT RIGHTS</h2>
+  <p>The Controller may audit the Processor's compliance upon reasonable notice (minimum 30 days). The AI Processing Log (Workspace Settings → Data & AI Processing) is available as evidence.</p>
+
+  <h2>11. GOVERNING LAW</h2>
+  <p>This DPA is governed by the laws of England and Wales.</p>
+
+  <div class="signatures">
+    <p><strong>Customer:</strong> _________________________ Title: _________ Date: _________</p>
+    <p><strong>SynqForge LTD:</strong> _________________________ Director Date: _________</p>
+  </div>
+</body>
+</html>

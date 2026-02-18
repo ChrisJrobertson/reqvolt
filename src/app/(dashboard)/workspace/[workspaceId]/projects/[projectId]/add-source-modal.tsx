@@ -21,10 +21,12 @@ const SOURCE_TYPES: { value: SourceType; label: string }[] = [
 
 export function AddSourceModal({
   projectId,
+  workspaceId,
   onClose,
   onSuccess,
 }: {
   projectId: string;
+  workspaceId: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -138,6 +140,11 @@ export function AddSourceModal({
               ×
             </button>
           </div>
+
+          <p className="text-xs text-muted-foreground mb-4">
+            🔒 Your documents are stored securely in Reqvolt&apos;s database and are never used for AI training.{" "}
+            <a href={`/workspace/${workspaceId}/settings/data-processing`} className="underline">Learn more</a>
+          </p>
 
           <div className="flex gap-2 mb-4">
             <button

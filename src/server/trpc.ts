@@ -93,3 +93,15 @@ export const adminProcedure = workspaceProcedure.use(async ({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+/** Platform-level admin: userId must be in ADMIN_USER_IDS env. Not workspace-scoped. */
+export const platformAdminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const adminIds = process.env.ADMIN_USER_IDS?.split(",").map((id) => id.trim()).filter(Boolean) ?? [];
+  if (adminIds.length === 0 || !adminIds.includes(ctx.userId)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Platform admin access required",
+    });
+  }
+  return next({ ctx });
+});
