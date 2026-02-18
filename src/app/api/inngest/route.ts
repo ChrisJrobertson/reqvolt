@@ -1,54 +1,26 @@
-import { serve } from "inngest/next";
 import { assertEnvValid } from "@/lib/env";
-import { inngest } from "@/server/inngest/client";
-import { extractSourceText } from "@/server/inngest/functions/extract-source-text";
-import { replaceExtractSourceText } from "@/server/inngest/functions/replace-extract-source-text";
-import { chunkAndEmbed } from "@/server/inngest/functions/chunk-and-embed";
-import { detectSourceChanges } from "@/server/inngest/functions/detect-source-changes";
-import { checkNewSourceRelevance } from "@/server/inngest/functions/check-new-source-relevance";
-import { retryPendingSummaries } from "@/server/inngest/functions/retry-pending-summaries";
-import { recomputePackHealth } from "@/server/inngest/functions/recompute-pack-health";
-import { syncMondayFeedback } from "@/server/inngest/functions/sync-monday-feedback";
-import { syncJiraFeedback } from "@/server/inngest/functions/sync-jira-feedback";
-import { sendHealthDigestDaily } from "@/server/inngest/functions/send-health-digest";
-import { sendHealthDigestWeekly } from "@/server/inngest/functions/send-health-digest";
-import { sendImmediateEmail } from "@/server/inngest/functions/send-immediate-email";
-import { cleanupOldData } from "@/server/inngest/functions/cleanup-old-data";
-import { processInboundEmail } from "@/server/inngest/functions/process-inbound-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const handler = serve({
-  client: inngest,
-  functions: [
-    extractSourceText,
-    replaceExtractSourceText,
-    chunkAndEmbed,
-    detectSourceChanges,
-    checkNewSourceRelevance,
-    retryPendingSummaries,
-    recomputePackHealth,
-    syncMondayFeedback,
-    syncJiraFeedback,
-    sendHealthDigestDaily,
-    sendHealthDigestWeekly,
-    sendImmediateEmail,
-    cleanupOldData,
-    processInboundEmail,
-  ],
-});
+async function getHandler() {
+  const { handler } = await import("./inngest-handler");
+  return handler;
+}
 
-export const GET = (req: Request, ctx: unknown) => {
+export async function GET(req: Request, ctx: unknown) {
   assertEnvValid();
+  const handler = await getHandler();
   return handler.GET(req as Parameters<typeof handler.GET>[0], ctx);
-};
-export const POST = (req: Request, ctx: unknown) => {
+}
+export async function POST(req: Request, ctx: unknown) {
   assertEnvValid();
+  const handler = await getHandler();
   return handler.POST(req as Parameters<typeof handler.POST>[0], ctx);
-};
-export const PUT = (req: Request, ctx: unknown) => {
+}
+export async function PUT(req: Request, ctx: unknown) {
   assertEnvValid();
+  const handler = await getHandler();
   return handler.PUT(req as Parameters<typeof handler.PUT>[0], ctx);
-};
+}
