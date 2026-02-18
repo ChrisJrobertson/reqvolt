@@ -56,17 +56,17 @@ export function ApiKeyManagement() {
       </p>
 
       {createdKey && (
-        <div className="p-4 border border-amber-200 bg-amber-50 rounded-lg">
-          <p className="text-sm font-medium text-amber-800 mb-2">
+        <div className="p-4 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 rounded-lg">
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
             Copy your key now. It won&apos;t be shown again.
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 px-3 py-2 bg-white border rounded text-sm truncate">
+            <code className="flex-1 px-3 py-2 bg-background border rounded text-sm truncate">
               {createdKey}
             </code>
             <button
               onClick={handleCopyKey}
-              className="px-3 py-2 border rounded-lg text-sm hover:bg-amber-100"
+              className="px-3 py-2 border rounded-lg text-sm hover:bg-amber-100 dark:hover:bg-amber-900/50"
             >
               Copy
             </button>

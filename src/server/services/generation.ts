@@ -7,8 +7,9 @@ import { embedText } from "./embedding";
 import { retrieveChunks } from "./retrieval";
 import { buildGenerationPrompt } from "../prompts/generation";
 import { runQARules } from "./qa-rules";
+import { assessGenerationQuality } from "./generation-quality-gate";
 import { getLangfuse } from "../lib/langfuse";
-import { getModelForTask } from "./model-router";
+import { getModelForTask, trackModelUsage } from "@/lib/ai/model-router";
 import {
   hashGenerationInputs,
   getCachedResponse,
@@ -35,6 +36,13 @@ export async function generatePack(input: GeneratePackInput) {
 
   if (sourceIds.length === 0) {
     throw new Error("At least one source is required");
+  }
+
+  const workspace = await db.workspace.findFirst({
+    where: { id: workspaceId },
+  });
+  if (!workspace?.aiGenerationEnabled) {
+    throw new Error("AI generation is disabled for this workspace");
   }
 
   const queryEmbedding = await embedText(
@@ -66,7 +74,7 @@ export async function generatePack(input: GeneratePackInput) {
       .join("\n");
   }
 
-  const model = getModelForTask("generation");
+  const model = getModelForTask("pack_generation");
   const cacheKey = hashGenerationInputs({
     sourceIds,
     templateId,
@@ -104,6 +112,15 @@ export async function generatePack(input: GeneratePackInput) {
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
     await addTokenUsage(workspaceId, inputTokens, outputTokens);
+    await trackModelUsage({
+      workspaceId,
+      model,
+      task: "pack_generation",
+      inputTokens,
+      outputTokens,
+      durationMs: Date.now() - start,
+      packId: undefined,
+    });
 
     getLangfuse()?.trace({
       name: "pack.generation",
@@ -239,6 +256,13 @@ export async function generatePack(input: GeneratePackInput) {
   }
 
   await runQARules(packVersion.id);
+
+  // Post-generation quality gate (non-blocking)
+  try {
+    await assessGenerationQuality(pack.id, packVersion.id, workspaceId);
+  } catch (err) {
+    console.warn("[generation] Quality gate failed:", err);
+  }
 
   return { packId: pack.id, packVersionId: packVersion.id };
 }

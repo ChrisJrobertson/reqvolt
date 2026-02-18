@@ -12,6 +12,12 @@ import { notificationRouter } from "./notification";
 import { notificationPreferenceRouter } from "./notification-preference";
 import { apiKeyRouter } from "./api-key";
 import { jiraRouter } from "./jira";
+import { importRouter } from "./import";
+import { storyCommentRouter } from "./story-comment";
+import { dashboardRouter } from "./dashboard";
+import { searchRouter } from "./search";
+import { onboardingRouter } from "./onboarding";
+import { feedbackRouter } from "./feedback";
 
 export const appRouter = router({
   workspace: workspaceRouter,
@@ -27,6 +33,12 @@ export const appRouter = router({
   notificationPreference: notificationPreferenceRouter,
   apiKey: apiKeyRouter,
   jira: jiraRouter,
+  import: importRouter,
+  storyComment: storyCommentRouter,
+  dashboard: dashboardRouter,
+  search: searchRouter,
+  onboarding: onboardingRouter,
+  feedback: feedbackRouter,
 });
 
 export type AppRouter = typeof appRouter;

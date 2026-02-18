@@ -23,6 +23,8 @@ export const notificationPreferenceRouter = router({
         notifyDeliveryFeedback: true,
         notifyHealthDegraded: true,
         notifyEmailIngested: true,
+        notifyMentions: true,
+        notifyReplies: true,
       };
     }
 
@@ -32,6 +34,8 @@ export const notificationPreferenceRouter = router({
       notifyDeliveryFeedback: pref.notifyDeliveryFeedback,
       notifyHealthDegraded: pref.notifyHealthDegraded,
       notifyEmailIngested: pref.notifyEmailIngested,
+      notifyMentions: pref.notifyMentions,
+      notifyReplies: pref.notifyReplies,
     };
   }),
 
@@ -43,6 +47,8 @@ export const notificationPreferenceRouter = router({
         notifyDeliveryFeedback: z.boolean().optional(),
         notifyHealthDegraded: z.boolean().optional(),
         notifyEmailIngested: z.boolean().optional(),
+        notifyMentions: z.boolean().optional(),
+        notifyReplies: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -61,6 +67,8 @@ export const notificationPreferenceRouter = router({
           notifyDeliveryFeedback: input.notifyDeliveryFeedback ?? true,
           notifyHealthDegraded: input.notifyHealthDegraded ?? true,
           notifyEmailIngested: input.notifyEmailIngested ?? true,
+          notifyMentions: input.notifyMentions ?? true,
+          notifyReplies: input.notifyReplies ?? true,
         },
         update: {
           ...(input.emailFrequency !== undefined && { emailFrequency: input.emailFrequency }),
@@ -68,6 +76,8 @@ export const notificationPreferenceRouter = router({
           ...(input.notifyDeliveryFeedback !== undefined && { notifyDeliveryFeedback: input.notifyDeliveryFeedback }),
           ...(input.notifyHealthDegraded !== undefined && { notifyHealthDegraded: input.notifyHealthDegraded }),
           ...(input.notifyEmailIngested !== undefined && { notifyEmailIngested: input.notifyEmailIngested }),
+          ...(input.notifyMentions !== undefined && { notifyMentions: input.notifyMentions }),
+          ...(input.notifyReplies !== undefined && { notifyReplies: input.notifyReplies }),
         },
       });
 

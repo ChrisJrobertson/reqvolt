@@ -16,6 +16,8 @@ interface PrefValues {
   notifyDeliveryFeedback: boolean;
   notifyHealthDegraded: boolean;
   notifyEmailIngested: boolean;
+  notifyMentions: boolean;
+  notifyReplies: boolean;
 }
 
 const DEFAULT_PREF: PrefValues = {
@@ -24,6 +26,8 @@ const DEFAULT_PREF: PrefValues = {
   notifyDeliveryFeedback: true,
   notifyHealthDegraded: true,
   notifyEmailIngested: true,
+  notifyMentions: true,
+  notifyReplies: true,
 };
 
 function NotificationPreferencesFormInner({ initialPref }: { initialPref: PrefValues }) {
@@ -40,6 +44,8 @@ function NotificationPreferencesFormInner({ initialPref }: { initialPref: PrefVa
   const [notifyEmailIngested, setNotifyEmailIngested] = useState(
     initialPref.notifyEmailIngested
   );
+  const [notifyMentions, setNotifyMentions] = useState(initialPref.notifyMentions);
+  const [notifyReplies, setNotifyReplies] = useState(initialPref.notifyReplies);
   const [saved, setSaved] = useState(false);
 
   const update = trpc.notificationPreference.update.useMutation({
@@ -58,6 +64,8 @@ function NotificationPreferencesFormInner({ initialPref }: { initialPref: PrefVa
       notifyDeliveryFeedback,
       notifyHealthDegraded,
       notifyEmailIngested,
+      notifyMentions,
+      notifyReplies,
     });
   };
 
@@ -165,6 +173,42 @@ function NotificationPreferencesFormInner({ initialPref }: { initialPref: PrefVa
               <span
                 className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
                   notifyEmailIngested ? "left-6" : "left-1"
+                }`}
+              />
+            </button>
+          </label>
+          <label className="flex items-center justify-between gap-4 cursor-pointer">
+            <span className="text-sm">@mentions in story comments</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notifyMentions}
+              onClick={() => setNotifyMentions(!notifyMentions)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                notifyMentions ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  notifyMentions ? "left-6" : "left-1"
+                }`}
+              />
+            </button>
+          </label>
+          <label className="flex items-center justify-between gap-4 cursor-pointer">
+            <span className="text-sm">Replies to my story comments</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notifyReplies}
+              onClick={() => setNotifyReplies(!notifyReplies)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                notifyReplies ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                  notifyReplies ? "left-6" : "left-1"
                 }`}
               />
             </button>

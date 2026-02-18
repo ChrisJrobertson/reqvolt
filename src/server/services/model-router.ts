@@ -1,19 +1,30 @@
 /**
  * Model routing for cost optimisation.
- * Routes simple tasks (QA rewrite) to Haiku, complex tasks to Sonnet.
+ * Re-exports from lib/ai with backward compatibility for legacy task names.
  */
-import { env } from "@/lib/env";
+import {
+  getModelForTask as getModelForTaskNew,
+  trackModelUsage as trackModelUsageNew,
+  type LlmTaskType as LlmTaskTypeNew,
+} from "@/lib/ai/model-router";
 
-export type LlmTaskType = "generation" | "qa-rewrite" | "refresh" | "impact-summary";
+export type LlmTaskType =
+  | "generation"
+  | "qa-rewrite"
+  | "refresh"
+  | "impact-summary"
+  | LlmTaskTypeNew;
+
+const LEGACY_TO_NEW: Record<string, LlmTaskTypeNew> = {
+  generation: "pack_generation",
+  "qa-rewrite": "qa_autofix",
+  refresh: "pack_generation",
+  "impact-summary": "impact_summary",
+};
 
 export function getModelForTask(taskType: LlmTaskType): string {
-  switch (taskType) {
-    case "qa-rewrite":
-    case "impact-summary":
-      return env.CLAUDE_MODEL_LIGHT;
-    case "generation":
-    case "refresh":
-    default:
-      return env.CLAUDE_MODEL;
-  }
+  const mapped = LEGACY_TO_NEW[taskType as string] ?? (taskType as LlmTaskTypeNew);
+  return getModelForTaskNew(mapped);
 }
+
+export { trackModelUsageNew as trackModelUsage };

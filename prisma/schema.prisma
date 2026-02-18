@@ -80,6 +80,10 @@ enum QARuleCode {
   UNTESTABLE
   OVERLOADED_AC
   MISSING_CLAUSE
+  NO_EVIDENCE
+  WEAK_EVIDENCE_ONLY
+  SEMANTIC_DUPLICATE
+  LONG_STORY
 }
 
 enum QASeverity {
@@ -105,10 +109,17 @@ enum ApprovalStatus {
 }
 
 model Workspace {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  name                 String
+  onboardingCompleted  Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  aiGenerationEnabled      Boolean @default(true)
+  aiQaAutoFixEnabled       Boolean @default(true)
+  aiSelfReviewEnabled      Boolean @default(true)
+  aiTopicExtractionEnabled Boolean @default(true)
+  aiEmbeddingEnabled       Boolean @default(true)
 
   healthWeights           Json    @default("{\"sourceDrift\":0.30,\"evidenceCoverage\":0.25,\"qaPassRate\":0.20,\"deliveryFeedback\":0.15,\"sourceAge\":0.10}")
   similarityThreshold     Float   @default(0.78)
@@ -128,6 +139,9 @@ model Workspace {
   apiKeys ApiKey[]
   notifications Notification[]
   notificationPreferences NotificationPreference[]
+  storyFeedback StoryFeedback[]
+  packFeedback PackFeedback[]
+  modelUsage ModelUsage[]
 }
 
 model WorkspaceMember {
@@ -225,6 +239,9 @@ model Pack {
   storyExports StoryExport[]
   deliveryFeedback DeliveryFeedback[]
   changeImpacts SourceChangeImpact[]
+  storyFeedback StoryFeedback[]
+  packFeedback PackFeedback[]
+  modelUsage   ModelUsage[]
   @@index([projectId])
   @@index([workspaceId])
 }
@@ -243,6 +260,11 @@ model PackVersion {
   generationConfig Json?
   changeAnalysis  Json?
   editLockUserId  String?
+  generationConfidence Json?
+  confidenceScore Int?
+  confidenceLevel String?
+  selfReviewRun   Boolean  @default(false)
+  selfReviewPassed Boolean?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -272,7 +294,91 @@ model Story {
   mondayPushLogs     MondayPushLog[]
   storyExports       StoryExport[]
   deliveryFeedback   DeliveryFeedback[]
+  comments           StoryComment[]
+  storyFeedback      StoryFeedback[]
   @@index([packVersionId])
+}
+
+enum StoryRating {
+  UP
+  DOWN
+}
+
+enum PackRating {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+model StoryFeedback {
+  id          String       @id @default(cuid())
+  storyId     String
+  story       Story        @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  packId      String
+  pack        Pack         @relation(fields: [packId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  rating      StoryRating
+  createdAt   DateTime     @default(now())
+
+  @@unique([storyId, userId])
+  @@index([packId])
+  @@index([workspaceId, createdAt])
+}
+
+model PackFeedback {
+  id          String      @id @default(cuid())
+  packId      String
+  pack        Pack        @relation(fields: [packId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  rating      PackRating
+  comment     String?     @db.Text
+  createdAt   DateTime    @default(now())
+
+  @@unique([packId, userId])
+  @@index([workspaceId, createdAt])
+}
+
+model ModelUsage {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  model        String
+  task         String
+  inputTokens  Int
+  outputTokens Int
+  durationMs   Int
+  packId       String?
+  pack         Pack?      @relation(fields: [packId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([task, createdAt])
+}
+
+model StoryComment {
+  id             String    @id @default(cuid())
+  storyId        String
+  packVersionId  String
+  workspaceId    String
+  parentId       String?
+  content        String    @db.Text
+  mentions       String[]  @default([])
+  createdBy      String    @db.VarChar(255)
+  resolvedAt     DateTime?
+  resolvedBy     String?   @db.VarChar(255)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  story   Story         @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  parent  StoryComment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies StoryComment[] @relation("CommentReplies")
+  @@index([storyId])
+  @@index([workspaceId])
+  @@index([parentId])
 }
 
 model AcceptanceCriteria {
@@ -654,6 +760,8 @@ model NotificationPreference {
   notifyDeliveryFeedback Boolean   @default(true)
   notifyHealthDegraded   Boolean   @default(true)
   notifyEmailIngested    Boolean   @default(true)
+  notifyMentions         Boolean   @default(true)
+  notifyReplies          Boolean   @default(true)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 

@@ -28,6 +28,8 @@ const serverSchema = z.object({
   R2_REGION: z.string().default("auto"),
   CLAUDE_MODEL: z.string().default("claude-sonnet-4-20250514"),
   CLAUDE_MODEL_LIGHT: z.string().default("claude-haiku-4-5-20251001"),
+  CLAUDE_HAIKU_MODEL: z.string().default("claude-haiku-4-5-20251001"),
+  ADMIN_USER_IDS: z.string().optional(), // Comma-separated Clerk user IDs for admin quality dashboard
   LLM_RATE_LIMIT_RPM: z.coerce.number().default(10),
   LLM_TOKEN_BUDGET_MONTHLY: z.coerce.number().default(500000),
   EMAIL_FROM: z.string().default("Reqvolt <notifications@reqvolt.com>"),

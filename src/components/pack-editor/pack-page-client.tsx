@@ -4,6 +4,9 @@ import { useState } from "react";
 import { PackHeader } from "./pack-header";
 import { PackEditor } from "./pack-editor";
 import { PackHealthPanel } from "./pack-health-panel";
+import { TraceabilityMini } from "@/components/pack/TraceabilityMini";
+import { GenerationConfidenceBar } from "@/components/pack/GenerationConfidenceBar";
+import { PackFeedbackPrompt } from "@/components/pack/PackFeedbackPrompt";
 import { SourceChangeImpactBanner } from "./SourceChangeImpactBanner";
 
 interface Source {
@@ -55,6 +58,9 @@ interface PackVersion {
   decisions: unknown;
   risks: unknown;
   changeAnalysis: ChangeAnalysis | null;
+  generationConfidence?: unknown;
+  confidenceScore?: number | null;
+  confidenceLevel?: string | null;
   qaFlags?: QAFlag[];
   stories: Array<{
     id: string;
@@ -121,14 +127,31 @@ export function PackPageClient({
         workspaceId={workspaceId}
         projectId={projectId}
       />
-      <div className="mb-6">
-        <PackHealthPanel packId={pack.id} />
+      {latestVersion && (
+        <GenerationConfidenceBar
+          report={(latestVersion.generationConfidence ?? null) as Parameters<typeof GenerationConfidenceBar>[0]["report"]}
+          packVersionId={latestVersion.id}
+          isLatestVersion={selectedVersionIndex === 0}
+        />
+      )}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="md:col-span-2">
+          <PackHealthPanel packId={pack.id} />
+        </div>
+        <TraceabilityMini
+          packId={pack.id}
+          workspaceId={workspaceId}
+          projectId={projectId}
+        />
       </div>
       <PackEditor
         pack={displayPack}
         evidenceMapByVersionId={evidenceMapByVersionId}
         selectedVersionIndex={selectedVersionIndex}
+        workspaceId={workspaceId}
+        projectId={projectId}
       />
+      <PackFeedbackPrompt packId={pack.id} />
     </>
   );
 }

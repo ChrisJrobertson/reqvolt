@@ -3,6 +3,7 @@ import { router, workspaceProcedure, publicProcedure } from "../trpc";
 import { db } from "../db";
 import { HealthStatus } from "@prisma/client";
 import { generatePack } from "../services/generation";
+import { assessSourceReadiness } from "../services/source-readiness";
 import { refreshPack } from "../services/refresh";
 import { runQARules } from "../services/qa-rules";
 import { auditService } from "../services/audit";
@@ -29,6 +30,10 @@ async function checkHealthRefreshRateLimit(packId: string): Promise<boolean> {
   if (ttl > 0) return false;
   await redis.setex(key, 60, "1");
   return true;
+}
+
+function hashSourceIds(sourceIds: string[]): string {
+  return crypto.createHash("sha256").update(sourceIds.sort().join(",")).digest("hex").slice(0, 16);
 }
 
 export const packRouter = router({
@@ -231,6 +236,32 @@ export const packRouter = router({
       }
       const count = await runQARules(input.packVersionId);
       return { flagCount: count };
+    }),
+
+  assessReadiness: workspaceProcedure
+    .input(z.object({ projectId: z.string(), sourceIds: z.array(z.string()).min(1) }))
+    .query(async ({ ctx, input }) => {
+      const cacheKey = `readiness:${input.projectId}:${hashSourceIds(input.sourceIds)}`;
+      const redis = getRedis();
+      if (redis) {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          try {
+            return JSON.parse(cached) as Awaited<ReturnType<typeof assessSourceReadiness>>;
+          } catch {
+            // invalid cache, continue
+          }
+        }
+      }
+      const report = await assessSourceReadiness(
+        input.projectId,
+        input.sourceIds,
+        ctx.workspaceId
+      );
+      if (redis) {
+        await redis.setex(cacheKey, 300, JSON.stringify(report));
+      }
+      return report;
     }),
 
   hasNewSources: workspaceProcedure
@@ -760,6 +791,191 @@ export const packRouter = router({
           })),
         })),
         comments: link.comments,
+      };
+    }),
+
+  getTraceabilityGraph: workspaceProcedure
+    .input(z.object({ packId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const pack = await db.pack.findFirst({
+        where: { id: input.packId, workspaceId: ctx.workspaceId },
+        include: {
+          project: true,
+          versions: {
+            orderBy: { versionNumber: "desc" },
+            take: 1,
+            include: {
+              stories: {
+                where: { deletedAt: null },
+                orderBy: { sortOrder: "asc" },
+                include: {
+                  acceptanceCriteria: {
+                    where: { deletedAt: null },
+                    orderBy: { sortOrder: "asc" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!pack || !pack.versions[0]) {
+        return { nodes: [], edges: [], nodeCount: 0, edgeCount: 0, evidenceCoveragePct: 100 };
+      }
+
+      const version = pack.versions[0];
+      const sourceIds = (version.sourceIds as string[]) ?? [];
+      const sources = sourceIds.length
+        ? await db.source.findMany({
+            where: { id: { in: sourceIds }, deletedAt: null },
+            select: { id: true, name: true },
+          })
+        : [];
+
+      const storyIds = version.stories.map((s) => s.id);
+      const acIds = version.stories.flatMap((s) =>
+        s.acceptanceCriteria.map((ac) => ac.id)
+      );
+      const allEntityIds = [...storyIds, ...acIds];
+
+      const evidenceLinks = allEntityIds.length
+        ? await db.evidenceLink.findMany({
+            where: {
+              entityId: { in: allEntityIds },
+              entityType: { in: ["story", "acceptance_criteria"] },
+            },
+            include: {
+              sourceChunk: {
+                include: { source: { select: { id: true, name: true } } },
+              },
+            },
+          })
+        : [];
+
+      const nodes: Array<{
+        id: string;
+        type: "source" | "story" | "ac" | "evidence" | "chunk";
+        label: string;
+        data: Record<string, unknown>;
+      }> = [];
+      const edges: Array<{ id: string; source: string; target: string; type?: string }> = [];
+      const seen = new Set<string>();
+
+      for (const s of sources) {
+        const id = `source-${s.id}`;
+        if (!seen.has(id)) {
+          seen.add(id);
+          nodes.push({
+            id,
+            type: "source",
+            label: s.name,
+            data: { sourceId: s.id, name: s.name },
+          });
+        }
+      }
+
+      for (const story of version.stories) {
+        const id = `story-${story.id}`;
+        if (!seen.has(id)) {
+          seen.add(id);
+          const label = `${story.persona}: ${story.want}`.slice(0, 60);
+          nodes.push({
+            id,
+            type: "story",
+            label,
+            data: { storyId: story.id, persona: story.persona, want: story.want },
+          });
+        }
+        for (const src of sources) {
+          edges.push({
+            id: `e-src-${src.id}-story-${story.id}`,
+            source: `source-${src.id}`,
+            target: `story-${story.id}`,
+            type: "informs",
+          });
+        }
+        for (const ac of story.acceptanceCriteria) {
+          const acId = `ac-${ac.id}`;
+          if (!seen.has(acId)) {
+            seen.add(acId);
+            const acIndex = story.acceptanceCriteria.findIndex((a) => a.id === ac.id) + 1;
+            nodes.push({
+              id: acId,
+              type: "ac",
+              label: `AC ${acIndex}`,
+              data: { acId: ac.id, given: ac.given, when: ac.when, then: ac.then },
+            });
+          }
+          edges.push({
+            id: `e-story-${story.id}-ac-${ac.id}`,
+            source: `story-${story.id}`,
+            target: acId,
+            type: "defines",
+          });
+        }
+      }
+
+      for (const link of evidenceLinks) {
+        const evId = `evidence-${link.id}`;
+        if (!seen.has(evId)) {
+          seen.add(evId);
+          nodes.push({
+            id: evId,
+            type: "evidence",
+            label: link.confidence,
+            data: { evidenceId: link.id, confidence: link.confidence },
+          });
+        }
+        const entityId = link.entityId;
+        const entityType = link.entityType;
+        const targetId = entityType === "story" ? `story-${entityId}` : `ac-${entityId}`;
+        edges.push({
+          id: `e-${targetId}-ev-${link.id}`,
+          source: targetId,
+          target: evId,
+          type: "supported_by",
+        });
+
+        const chunk = link.sourceChunk;
+        if (chunk) {
+          const chunkId = `chunk-${chunk.id}`;
+          if (!seen.has(chunkId)) {
+            seen.add(chunkId);
+            const snippet = chunk.content.slice(0, 50).replace(/\s+/g, " ");
+            nodes.push({
+              id: chunkId,
+              type: "chunk",
+              label: snippet,
+              data: {
+                chunkId: chunk.id,
+                sourceId: chunk.source?.id,
+                sourceName: chunk.source?.name,
+                content: chunk.content,
+              },
+            });
+          }
+          edges.push({
+            id: `e-ev-${link.id}-chunk-${chunk.id}`,
+            source: evId,
+            target: chunkId,
+            type: "references",
+          });
+        }
+      }
+
+      const totalAc = acIds.length;
+      const acsWithEvidence = new Set(
+        evidenceLinks.filter((l) => l.entityType === "acceptance_criteria").map((l) => l.entityId)
+      ).size;
+      const evidenceCoveragePct: number =
+        totalAc > 0 ? Math.round((acsWithEvidence / totalAc) * 100) : 100;
+
+      return {
+        nodes,
+        edges,
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        evidenceCoveragePct,
       };
     }),
 

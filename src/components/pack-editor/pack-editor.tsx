@@ -4,7 +4,11 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { DeliveryFeedbackPanel } from "./DeliveryFeedbackPanel";
+import { StoryDiscussionPanel } from "./StoryDiscussionPanel";
+import { StoryFeedbackToggle } from "@/components/pack/StoryFeedbackToggle";
 import { TranscriptEvidenceDisplay } from "./TranscriptEvidenceDisplay";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { FileText } from "lucide-react";
 
 interface EvidenceLink {
   id: string;
@@ -83,11 +87,15 @@ export function PackEditor({
   pack,
   evidenceMapByVersionId,
   selectedVersionIndex = 0,
+  workspaceId,
+  projectId,
 }: {
   pack: Pack;
   evidenceMapByVersionId: Record<string, EvidenceMap>;
   selectedVersionIndex: number;
   onVersionChange?: (index: number) => void;
+  workspaceId?: string;
+  projectId?: string;
 }) {
   const router = useRouter();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -138,6 +146,18 @@ export function PackEditor({
   const runQa = trpc.pack.runQa.useMutation({
     onSuccess: () => router.refresh(),
   });
+
+  const { data: storyFeedback } = trpc.feedback.getStoryFeedback.useQuery(
+    { packId: pack.id },
+    { enabled: !!pack.id }
+  );
+  const ratingByStory = (storyFeedback?.currentUserRatings ?? []).reduce(
+    (acc, f) => {
+      acc[f.storyId] = f.rating;
+      return acc;
+    },
+    {} as Record<string, "UP" | "DOWN">
+  );
 
   const scheduleQaRerun = useCallback((packVersionId: string) => {
     if (qaRerunTimeoutRef.current) clearTimeout(qaRerunTimeoutRef.current);
@@ -285,6 +305,24 @@ export function PackEditor({
                 This version is locked. Unlock to edit.
               </p>
             )}
+            {latestVersion.stories.length === 0 ? (
+              <div className="border rounded-lg">
+                <EmptyState
+                  icon={FileText}
+                  title="No stories generated yet"
+                  description="This pack hasn't generated any user stories. Run the AI generation to get started."
+                  action={
+                    workspaceId && projectId
+                      ? {
+                          label: "Generate stories",
+                          href: `/workspace/${workspaceId}/projects/${projectId}`,
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            ) : (
+            <>
             {latestVersion.stories.map((story) => (
               <div
                 key={story.id}
@@ -519,7 +557,16 @@ export function PackEditor({
                   </button>
                 </div>
                 )}
+                <div className="mt-2 flex justify-end">
+                  <StoryFeedbackToggle
+                    key={`${story.id}-${ratingByStory[story.id] ?? "none"}`}
+                    storyId={story.id}
+                    packId={pack.id}
+                    initialRating={ratingByStory[story.id] ?? null}
+                  />
+                </div>
                 <DeliveryFeedbackPanel storyId={story.id} packId={pack.id} />
+                <StoryDiscussionPanel storyId={story.id} />
               </div>
             ))}
             {!isLocked && (
@@ -541,6 +588,8 @@ export function PackEditor({
             >
               + Add Story
             </button>
+            )}
+            </>
             )}
           </section>
         )}
@@ -655,12 +704,12 @@ export function PackEditor({
                         <span
                           className={`text-xs px-1.5 py-0.5 rounded mr-1 ${
                             el.evolutionStatus === "new"
-                              ? "bg-blue-100"
+                              ? "bg-blue-100 dark:bg-blue-950/50"
                               : el.evolutionStatus === "strengthened"
-                                ? "bg-green-100"
+                                ? "bg-green-100 dark:bg-green-950/50"
                                 : el.evolutionStatus === "contradicted"
-                                  ? "bg-red-100"
-                                  : "bg-gray-100"
+                                  ? "bg-red-100 dark:bg-red-950/50"
+                                  : "bg-gray-100 dark:bg-muted"
                           }`}
                         >
                           {el.evolutionStatus}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { PackHealthBadge } from "./pack-health-badge";
+import { GitBranch } from "lucide-react";
 
 interface Source {
   id: string;
@@ -149,6 +150,13 @@ export function PackHeader({
         </Link>
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-2xl font-bold">{pack.name}</h1>
+          <Link
+            href={`/workspace/${workspaceId}/projects/${projectId}/packs/${pack.id}/traceability`}
+            className="px-4 py-2 border rounded-lg hover:bg-muted text-sm flex items-center gap-2"
+          >
+            <GitBranch className="h-4 w-4" />
+            View Traceability
+          </Link>
           {pack.healthScore != null && pack.healthStatus && (
             <PackHealthBadge
               score={pack.healthScore}

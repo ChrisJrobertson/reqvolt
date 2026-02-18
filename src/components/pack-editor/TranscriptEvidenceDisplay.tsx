@@ -46,12 +46,12 @@ export function TranscriptEvidenceDisplay({
           <span
             className={`text-xs px-1.5 py-0.5 rounded ${
               evolutionStatus === "new"
-                ? "bg-blue-100"
+                ? "bg-blue-100 dark:bg-blue-950/50"
                 : evolutionStatus === "strengthened"
-                  ? "bg-green-100"
+                  ? "bg-green-100 dark:bg-green-950/50"
                   : evolutionStatus === "contradicted"
-                    ? "bg-red-100"
-                    : "bg-gray-100"
+                    ? "bg-red-100 dark:bg-red-950/50"
+                    : "bg-gray-100 dark:bg-muted"
             }`}
           >
             {evolutionStatus}

@@ -44,9 +44,14 @@ function MondayPushHistory({ projectId }: { projectId: string }) {
   );
 }
 import { AddSourceModal } from "./add-source-modal";
+import { ImportSourcesModal } from "@/components/project/ImportSourcesModal";
 import { PackHealthBadge } from "@/components/pack-editor/pack-health-badge";
 import { AttentionWidget } from "@/components/attention-widget";
 import { EmailForwardingCard } from "@/components/project/EmailForwardingCard";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SourceReadinessPanel } from "@/components/pack/SourceReadinessPanel";
+import { GenerationProgress } from "@/components/pack/GenerationProgress";
+import { FileDown, Database, Package } from "lucide-react";
 
 interface Source {
   id: string;
@@ -83,9 +88,14 @@ export function ProjectPageClient({
   project: Project;
 }) {
   const [showAddSource, setShowAddSource] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const [generateNotes, setGenerateNotes] = useState("");
+  const [readinessBlocked, setReadinessBlocked] = useState(false);
+  const [readinessWarnings, setReadinessWarnings] = useState(false);
+
+  const { data: jiraConnection } = trpc.jira.getConnection.useQuery();
 
   const query = trpc.project.getById.useQuery(
     { projectId },
@@ -154,16 +164,26 @@ export function ProjectPageClient({
       <section>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Sources</h2>
-          <button
-            onClick={() => setShowAddSource(true)}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90"
-          >
-            Add Source
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="px-4 py-2 border rounded-lg hover:bg-muted flex items-center gap-2"
+            >
+              <FileDown className="h-4 w-4" />
+              Import
+            </button>
+            <button
+              onClick={() => setShowAddSource(true)}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90"
+            >
+              Add Source
+            </button>
+          </div>
         </div>
 
+        {project?.sources && project.sources.length > 0 ? (
         <ul className="space-y-2">
-          {project?.sources.map((source) => (
+          {project.sources.map((source) => (
             <li
               key={source.id}
               className={`p-4 border rounded-lg flex justify-between items-start gap-4 ${
@@ -242,12 +262,20 @@ export function ProjectPageClient({
               </div>
             </li>
           ))}
-          {(!project?.sources || project.sources.length === 0) && (
-            <li className="text-muted-foreground p-4 border rounded-lg">
-              No sources yet. Add text, email, or upload files.
-            </li>
-          )}
         </ul>
+        ) : (
+          <div className="border rounded-lg">
+            <EmptyState
+              icon={Database}
+              title="No sources yet"
+              description="Upload a document, paste a transcript, or import from Jira."
+              action={{
+                label: "Add source",
+                onClick: () => setShowAddSource(true),
+              }}
+            />
+          </div>
+        )}
       </section>
 
       <section>
@@ -257,7 +285,7 @@ export function ProjectPageClient({
       <section>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Story Packs</h2>
-          {completedSources.length > 0 && (
+          {completedSources.length > 0 && !generatePack.isPending && (
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -268,18 +296,50 @@ export function ProjectPageClient({
               />
               <button
                 onClick={handleGenerate}
-                disabled={
-                  generatePack.isPending || selectedSourceIds.size === 0
-                }
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50"
+                disabled={selectedSourceIds.size === 0 || readinessBlocked}
+                className={`px-4 py-2 rounded-lg disabled:opacity-50 ${
+                  readinessBlocked
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : readinessWarnings
+                      ? "bg-amber-500 text-white hover:bg-amber-600"
+                      : "bg-primary text-primary-foreground hover:opacity-90"
+                }`}
               >
-                {generatePack.isPending ? "Generating..." : "Generate Story Pack"}
+                {readinessBlocked
+                  ? "Cannot generate — resolve issues above"
+                  : readinessWarnings
+                    ? "Generate Pack (with warnings)"
+                    : "Generate Story Pack"}
               </button>
             </div>
           )}
         </div>
+
+        {selectedSourceIds.size > 0 && (
+          <div className="mb-4">
+            <SourceReadinessPanel
+              projectId={projectId}
+              sourceIds={Array.from(selectedSourceIds)}
+              onReport={(r) => {
+                setReadinessBlocked(r.overallStatus === "blocked");
+                setReadinessWarnings(r.overallStatus === "warnings");
+              }}
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              🔒 Source material is processed via Anthropic&apos;s Claude API with zero data retention.{" "}
+              <a href={`/workspace/${workspaceId}/settings`} className="underline">View AI processing policy</a>
+            </p>
+          </div>
+        )}
+
+        {generatePack.isPending && (
+          <div className="mb-6">
+            <GenerationProgress estimatedTime="About 45 seconds" />
+          </div>
+        )}
+        {project?.packs && project.packs.length > 0 ? (
         <ul className="space-y-2">
-          {project?.packs.map((pack) => (
+          {project.packs.map((pack) => (
             <li key={pack.id}>
               <Link
                 href={`/workspace/${workspaceId}/projects/${projectId}/packs/${pack.id}`}
@@ -301,12 +361,20 @@ export function ProjectPageClient({
               </Link>
             </li>
           ))}
-          {(!project?.packs || project.packs.length === 0) && (
-            <li className="text-muted-foreground p-4 border rounded-lg">
-              No packs yet. Add sources and generate a Story Pack.
-            </li>
-          )}
         </ul>
+        ) : (
+          <div className="border rounded-lg">
+            <EmptyState
+              icon={Package}
+              title="No packs yet"
+              description="Generate your first requirements pack from a source document."
+              action={{
+                label: "Add source",
+                onClick: () => setShowAddSource(true),
+              }}
+            />
+          </div>
+        )}
       </section>
 
       {showAddSource && (
@@ -316,6 +384,19 @@ export function ProjectPageClient({
           onSuccess={() => {
             utils.project.getById.invalidate({ projectId });
             setShowAddSource(false);
+          }}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportSourcesModal
+          projectId={projectId}
+          workspaceId={workspaceId}
+          hasJiraConnection={!!jiraConnection && jiraConnection.isActive !== false}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            utils.project.getById.invalidate({ projectId });
+            setShowImportModal(false);
           }}
         />
       )}

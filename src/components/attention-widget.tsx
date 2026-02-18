@@ -30,7 +30,7 @@ export function AttentionWidget({ workspaceId, projectId }: AttentionWidgetProps
   const maxRows = 5;
 
   return (
-    <div className="rounded-lg border p-4">
+    <div className="rounded-lg border p-4 bg-card">
       <h3 className="font-semibold mb-3">Packs needing attention</h3>
       <ul className="space-y-2">
         {packs.slice(0, maxRows).map((pack) => (
