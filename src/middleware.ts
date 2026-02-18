@@ -17,12 +17,12 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Content-Security-Policy": [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.clerk.dev https://js.clerk.dev",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.clerk.dev https://js.clerk.dev https://clerk.reqvolt.com",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
+    "img-src 'self' data: https://img.clerk.com https:",
     "font-src 'self' data:",
-    "connect-src 'self' https:",
-    "frame-src https://accounts.clerk.dev",
+    "connect-src 'self' https://clerk.reqvolt.com https:",
+    "frame-src 'self' https://accounts.reqvolt.com https://accounts.clerk.dev",
   ].join("; "),
 };
 
