@@ -4,7 +4,6 @@
  */
 import { InngestMiddleware } from "inngest";
 import * as Sentry from "@sentry/nextjs";
-import { env } from "@/lib/env";
 
 export const sentryMiddleware = new InngestMiddleware({
   name: "Inngest: Sentry",
@@ -13,7 +12,7 @@ export const sentryMiddleware = new InngestMiddleware({
       transformOutput: ({ result }) => {
         const error = result?.error;
         if (error && typeof error === "object" && "message" in error) {
-          if (env.SENTRY_DSN) {
+          if (process.env.SENTRY_DSN) {
             Sentry.withScope((scope) => {
               scope.setTag("inngest_function", fn.name);
               scope.setTag("inngest_event", ctx.event.name);
