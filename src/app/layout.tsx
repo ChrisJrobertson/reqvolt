@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Reqvolt - AI Story Packs for Agile Teams",
   description: "Convert messy discovery inputs into evidence-linked Story Packs",
+  icons: { icon: "/next.svg" },
 };
 
 export default function RootLayout({
