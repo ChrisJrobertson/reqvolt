@@ -6,6 +6,8 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/review/(.*)",
+  "/api/webhooks(.*)",
+  "/api/inngest(.*)",
 ]);
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -17,12 +19,13 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Content-Security-Policy": [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.clerk.dev https://js.clerk.dev https://clerk.reqvolt.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.clerk.dev https://js.clerk.dev https://clerk.reqvolt.com https://*.clerk.accounts.dev https://vercel.live",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://img.clerk.com https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://clerk.reqvolt.com https:",
-    "frame-src 'self' https://accounts.reqvolt.com https://accounts.clerk.dev",
+    "connect-src 'self' https://clerk.reqvolt.com https://*.clerk.accounts.dev wss://*.clerk.accounts.dev https:",
+    "frame-src 'self' https://accounts.reqvolt.com https://accounts.clerk.dev https://*.clerk.accounts.dev",
+    "worker-src 'self' blob:",
   ].join("; "),
 };
 
