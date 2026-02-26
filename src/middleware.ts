@@ -1,6 +1,16 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+const SKIP_VALUES = ["1", "true", "yes"];
+const isSkipAuthEnabled = () => {
+  const val = process.env.SKIP_AUTH_IN_DEV;
+  return (
+    process.env.NODE_ENV === "development" &&
+    val !== undefined &&
+    SKIP_VALUES.includes(val.toLowerCase())
+  );
+};
+
 const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
@@ -46,7 +56,7 @@ function addSecurityHeaders(response: NextResponse, pathname: string): void {
 }
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
+  if (!isPublicRoute(req) && !isSkipAuthEnabled()) {
     await auth.protect();
   }
   const response = NextResponse.next();

@@ -55,6 +55,10 @@ const serverSchema = z.object({
   LANGFUSE_PUBLIC_KEY: z.string().optional(),
   LANGFUSE_SECRET_KEY: z.string().optional(),
   RESEND_WEBHOOK_SECRET: z.string().optional(),
+
+  // Dev-only: bypass Clerk auth for local testing (never use in production)
+  SKIP_AUTH_IN_DEV: z.string().optional(),
+  REQVOLT_DEV_USER_ID: z.string().optional(),
 });
 
 const clientSchema = z.object({

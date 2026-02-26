@@ -1,16 +1,16 @@
-import { auth } from "@clerk/nextjs/server";
-
-export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { WorkspaceDashboard } from "./workspace-dashboard";
+import { getAuthUserId } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
 
 export default async function WorkspacePage({
   params,
 }: {
   params: Promise<{ workspaceId: string }>;
 }) {
-  const { userId } = await auth();
+  const userId = await getAuthUserId();
   if (!userId) redirect("/sign-in");
 
   const { workspaceId } = await params;

@@ -1,11 +1,11 @@
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { AdminQualityDashboard } from "./admin-quality-dashboard";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminQualityPage() {
-  const { userId } = await auth();
+  const userId = await getAuthUserId();
   if (!userId) redirect("/sign-in");
 
   const adminIds = (process.env.ADMIN_USER_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);

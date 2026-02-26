@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import Link from "next/link";
@@ -11,7 +11,7 @@ export default async function TraceabilityPage({
 }: {
   params: Promise<{ workspaceId: string; projectId: string; packId: string }>;
 }) {
-  const { userId } = await auth();
+  const userId = await getAuthUserId();
   if (!userId) redirect("/sign-in");
 
   const { workspaceId, projectId, packId } = await params;

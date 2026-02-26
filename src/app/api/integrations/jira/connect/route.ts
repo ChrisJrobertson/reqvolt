@@ -3,7 +3,7 @@
  * Requires Admin role. Redirects to Atlassian authorize URL.
  */
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId } from "@/lib/auth";
 import { db } from "@/server/db";
 import { env } from "@/lib/env";
 import { SignJWT } from "jose";
@@ -13,7 +13,7 @@ const SCOPES = "read:jira-work write:jira-work offline_access";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const { userId } = await auth();
+  const userId = await getAuthUserId();
   if (!userId) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }

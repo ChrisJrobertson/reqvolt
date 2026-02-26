@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getAuthUserId } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/server/db";
@@ -11,7 +11,7 @@ export default async function DataProcessingPage({
 }: {
   params: Promise<{ workspaceId: string }>;
 }) {
-  const { userId } = await auth();
+  const userId = await getAuthUserId();
   if (!userId) redirect("/sign-in");
 
   const { workspaceId } = await params;

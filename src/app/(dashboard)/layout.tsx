@@ -1,14 +1,14 @@
-import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { getAuthUserId } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-import { redirect } from "next/navigation";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { userId } = await auth();
+  const userId = await getAuthUserId();
   if (!userId) redirect("/sign-in");
 
   return <>{children}</>;
