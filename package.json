@@ -14,7 +14,8 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "vercel:env": "bash scripts/vercel-env-setup.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

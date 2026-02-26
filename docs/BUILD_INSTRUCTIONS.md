@@ -43,6 +43,10 @@ Add these environment variables in **Vercel → Project → Settings → Environ
 - `R2_ENDPOINT`
 - `INNGEST_SIGNING_KEY` — from Inngest dashboard
 
+**Clerk keys for preview deployments:** Production keys (`pk_live_`, `sk_live_`) are domain-locked to `reqvolt.com`. For Vercel preview deployments (`*.vercel.app`), use development keys (`pk_test_`, `sk_test_`) in the **Preview** and **Development** environments. Set production keys only for the **Production** environment.
+
+**Clerk redirects (optional):** `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`, `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard`, `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard`
+
 **Optional:** `ADMIN_USER_IDS`, `REDIS_URL`, `RESEND_API_KEY`, `SENTRY_DSN`, etc. (see `.env.example`)
 
 **Runtime validation:** On first tRPC or Inngest request in production, if any required var is missing, the app throws with a clear error listing the missing vars.
