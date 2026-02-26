@@ -61,6 +61,17 @@
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@clerk/shared",
+      "@prisma/client",
+      "@prisma/engines",
+      "@sentry/cli",
+      "esbuild",
+      "prisma",
+      "protobufjs"
+    ]
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
