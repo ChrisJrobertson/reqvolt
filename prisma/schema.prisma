@@ -15,6 +15,13 @@ enum WorkspaceRole {
   Member
 }
 
+enum ProjectRole {
+  Contributor
+  Reviewer
+  Viewer
+  Approver
+}
+
 enum SourceType {
   MEETING_NOTES
   CUSTOMER_FEEDBACK
@@ -59,6 +66,42 @@ enum SourceStatus {
 enum EvidenceEntityType {
   story
   acceptance_criteria
+}
+
+enum ClassificationTag {
+  REQUIREMENT
+  DECISION
+  COMMITMENT
+  QUESTION
+  CONTEXT
+  CONSTRAINT
+}
+
+enum ConflictResolution {
+  unresolved
+  source_a_preferred
+  source_b_preferred
+  both_valid
+  dismissed
+}
+
+enum ApprovalScope {
+  full_pack
+  scoped
+}
+
+enum ApprovalRequestStatus {
+  pending
+  approved
+  changes_requested
+  expired
+}
+
+enum ChangeRequestStatus {
+  open
+  approved
+  rejected
+  implemented
 }
 
 enum ConfidenceLevel {
@@ -127,8 +170,20 @@ model Workspace {
   jiraSignalWords         String[] @default(["unclear", "ambiguous", "question", "assumption", "wrong", "missing", "confused", "what does", "what do you mean"])
   mondayRejectionStatuses String[] @default(["Stuck", "Rejected"])
 
-  members   WorkspaceMember[]
-  projects  Project[]
+  retentionAutoArchiveDays Int      @default(180)
+  retentionAutoDeleteDays  Int      @default(365)
+  retentionEnabled         Boolean  @default(false)
+
+  sessionTimeoutHours Int    @default(8)
+  dataRegion          String @default("eu-west-1")
+  ssoEnabled          Boolean @default(false)
+  ssoProvider         String?
+  ssoMetadataUrl      String?
+  ssoEntityId         String?
+
+  members            WorkspaceMember[]
+  projects           Project[]
+  methodologyConfigs MethodologyConfig[]
   auditLogs AuditLog[]
   templates Template[]
   glossary  GlossaryEntry[]
@@ -159,19 +214,64 @@ model WorkspaceMember {
   @@index([userId])
 }
 
+model MethodologyConfig {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  isBuiltIn   Boolean  @default(false)
+  config      Json
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projects  Project[]
+
+  @@index([workspaceId])
+  @@unique([workspaceId, name])
+}
+
 model Project {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   workspaceId     String
   name            String
   clientName      String?
-  forwardingEmail String?  @unique @db.VarChar(255)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  forwardingEmail String?   @unique @db.VarChar(255)
+  methodologyId   String?
+  legalHold       Boolean   @default(false)
+  legalHoldSetBy  String?
+  legalHoldSetAt  DateTime?
+  archivedAt      DateTime?
+  deletedAt       DateTime?
+  exemptFromRetention Boolean @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  sources   Source[]
-  packs     Pack[]
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  methodology MethodologyConfig? @relation(fields: [methodologyId], references: [id], onDelete: SetNull)
+  sources     Source[]
+  packs       Pack[]
+  evidenceConflicts EvidenceConflict[]
+  changeRequests ChangeRequest[]
+  projectMembers ProjectMember[]
   @@index([workspaceId])
+  @@index([methodologyId])
+}
+
+model ProjectMember {
+  id         String      @id @default(cuid())
+  projectId  String
+  userId     String      @db.VarChar(255)
+  role       ProjectRole @default(Viewer)
+  assignedBy String      @db.VarChar(255)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
 }
 
 model Source {
@@ -207,18 +307,49 @@ model Source {
 }
 
 model SourceChunk {
-  id         String   @id @default(cuid())
-  sourceId   String
-  content    String   @db.Text
-  tokenCount Int      @default(0)
-  chunkIndex Int
-  metadata   Json?
-  embedding  Unsupported("vector(1536)")?
+  id                   String            @id @default(cuid())
+  sourceId              String
+  content               String            @db.Text
+  redactedAt            DateTime?
+  redactedBy            String?            @db.VarChar(255)
+  tokenCount           Int               @default(0)
+  chunkIndex           Int
+  metadata              Json?
+  embedding             Unsupported("vector(1536)")?
+  classificationTag     ClassificationTag?
+  classificationConfidence Float?
 
   source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   evidenceLinks EvidenceLink[]
+  conflictsAsA EvidenceConflict[] @relation("ConflictChunkA")
+  conflictsAsB EvidenceConflict[] @relation("ConflictChunkB")
 
   @@index([sourceId])
+  @@index([classificationTag])
+}
+
+model EvidenceConflict {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  projectId       String
+  chunkAId        String
+  chunkBId        String
+  conflictSummary String   @db.Text
+  confidence      Float
+  resolution      ConflictResolution? @default(unresolved)
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  resolutionNote  String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  chunkA SourceChunk @relation("ConflictChunkA", fields: [chunkAId], references: [id], onDelete: Cascade)
+  chunkB SourceChunk @relation("ConflictChunkB", fields: [chunkBId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([workspaceId])
+  @@unique([chunkAId, chunkBId])
 }
 
 model Pack {
@@ -230,15 +361,21 @@ model Pack {
   healthScore  Int?
   healthStatus HealthStatus @default(healthy)
   lastHealthCheck DateTime?
+  lastBaselineId  String?
+  divergedFromBaseline Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions PackVersion[]
+  approvalRequests ApprovalRequest[]
+  baselines Baseline[]
+  lastBaseline Baseline? @relation("LastBaseline", fields: [lastBaselineId], references: [id])
   healthHistory PackHealth[]
   storyExports StoryExport[]
   deliveryFeedback DeliveryFeedback[]
   changeImpacts SourceChangeImpact[]
+  changeRequests ChangeRequest[]
   storyFeedback StoryFeedback[]
   packFeedback PackFeedback[]
   modelUsage   ModelUsage[]
@@ -274,7 +411,56 @@ model PackVersion {
   reviewLinks    ReviewLink[]
   mondayPushLogs MondayPushLog[]
   storyExports   StoryExport[]
+  approvalRequests ApprovalRequest[]
+  baselines      Baseline[]
   @@index([packId])
+}
+
+model Baseline {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  packId          String
+  packVersionId   String
+  versionLabel    String
+  versionNumber   Int
+  snapshotData    Json
+  approvalRef     String?
+  note            String?
+  createdBy       String
+  createdAt       DateTime @default(now())
+
+  pack        Pack        @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packVersion PackVersion @relation(fields: [packVersionId], references: [id], onDelete: Cascade)
+  packsAsLast  Pack[]      @relation("LastBaseline")
+
+  @@index([packId])
+  @@index([workspaceId])
+}
+
+model ApprovalRequest {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  packId          String
+  packVersionId   String
+  approverName    String
+  approverEmail   String
+  approvalScope   ApprovalScope @default(full_pack)
+  scopeFilter     Json?
+  token           String   @unique @default(cuid())
+  dueDate         DateTime?
+  status          ApprovalRequestStatus @default(pending)
+  approvedAt      DateTime?
+  signatureName   String?
+  rejectionReason String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pack        Pack        @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packVersion PackVersion @relation(fields: [packVersionId], references: [id], onDelete: Cascade)
+
+  @@index([packId])
+  @@index([workspaceId])
+  @@index([token])
 }
 
 model Story {
@@ -647,6 +833,7 @@ model StoryExport {
   externalStatusCategory String?   @db.VarChar(50)
   lastSyncedAt           DateTime?
   syncError              String?   @db.Text
+  changedSincePush       Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -710,6 +897,33 @@ model SourceChangeImpact {
 
   @@index([packId])
   @@index([packId, isAcknowledged])
+}
+
+model ChangeRequest {
+  id               String              @id @default(cuid())
+  workspaceId       String
+  projectId        String
+  packId           String
+  title            String              @db.VarChar(500)
+  description      String              @db.Text
+  trigger          String              @db.VarChar(500)
+  triggerSourceId  String?
+  impactedStoryIds Json                // string[]
+  impactSummary    String              @db.Text
+  requestedBy      String              @db.VarChar(255)
+  status           ChangeRequestStatus @default(open)
+  approvedBy       String?             @db.VarChar(255)
+  approvedAt       DateTime?
+  rejectionReason  String?             @db.Text
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pack    Pack    @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([packId])
+  @@index([workspaceId])
 }
 
 model ApiKey {

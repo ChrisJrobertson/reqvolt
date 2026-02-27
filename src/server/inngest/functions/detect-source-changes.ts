@@ -248,12 +248,46 @@ export const detectSourceChanges = inngest.createFunction(
         });
       });
 
+      if (pack.lastBaselineId) {
+        const description =
+          impactSummary ??
+          `${packStoryIds.length} stor${packStoryIds.length !== 1 ? "ies" : "y"} affected by source changes.`;
+        await db.changeRequest.create({
+          data: {
+            workspaceId,
+            projectId,
+            packId: pack.id,
+            title: `Source update: ${source?.name ?? "Unknown"}`,
+            description,
+            trigger: `Source '${source?.name ?? "Unknown"}' was updated`,
+            triggerSourceId: sourceId,
+            impactedStoryIds: packStoryIds,
+            impactSummary: description,
+            requestedBy: "system",
+            status: "open",
+          },
+        });
+        await createNotificationsForWorkspace({
+          workspaceId,
+          type: "change_request_created",
+          title: `Change Request: ${source?.name ?? "Unknown"}`,
+          body: description,
+          link: `/workspace/${workspaceId}/projects/${projectId}/change-requests`,
+          relatedPackId: pack.id,
+          relatedSourceId: sourceId,
+          preferenceKey: "notifySourceChanges",
+        });
+      }
+
       await inngest.send({
         name: "pack/health.recompute",
         data: { packId: pack.id },
       });
 
-      if (severity === "moderate" || severity === "major") {
+      if (
+        !pack.lastBaselineId &&
+        (severity === "moderate" || severity === "major")
+      ) {
         await createNotificationsForWorkspace({
           workspaceId,
           type: "source_changed",

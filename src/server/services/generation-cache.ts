@@ -10,6 +10,7 @@ export function hashGenerationInputs(params: {
   sourceIds: string[];
   templateId?: string;
   userNotes?: string;
+  methodologyId?: string | null;
   model: string;
 }): string {
   const sorted = [...params.sourceIds].sort();
@@ -17,6 +18,7 @@ export function hashGenerationInputs(params: {
     sourceIds: sorted,
     templateId: params.templateId ?? "",
     userNotes: params.userNotes ?? "",
+    methodologyId: params.methodologyId ?? "",
     model: params.model,
   });
   return crypto.createHash("sha256").update(payload).digest("hex");

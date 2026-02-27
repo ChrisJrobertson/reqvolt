@@ -51,7 +51,7 @@ import { EmailForwardingCard } from "@/components/project/EmailForwardingCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SourceReadinessPanel } from "@/components/pack/SourceReadinessPanel";
 import { GenerationProgress } from "@/components/pack/GenerationProgress";
-import { FileDown, Database, Package } from "lucide-react";
+import { FileDown, Database, Package, FileSearch } from "lucide-react";
 
 interface Source {
   id: string;
@@ -96,6 +96,15 @@ export function ProjectPageClient({
   const [readinessWarnings, setReadinessWarnings] = useState(false);
 
   const { data: jiraConnection } = trpc.jira.getConnection.useQuery();
+  const { data: evidenceStats } = trpc.evidenceLedger.stats.useQuery(
+    { projectId },
+    { enabled: !!projectId }
+  );
+  const { data: conflicts } = trpc.evidenceLedger.conflicts.useQuery(
+    { projectId },
+    { enabled: !!projectId }
+  );
+  const unresolvedConflicts = conflicts?.filter((c) => !c.resolution).length ?? 0;
 
   const query = trpc.project.getById.useQuery(
     { projectId },
@@ -148,11 +157,47 @@ export function ProjectPageClient({
   const recentEmailCount =
     project?.sources.filter((s) => s.type === "EMAIL").length ?? 0;
 
+  const { data: methodologies } = trpc.methodology.list.useQuery();
+  const { data: projectMethodology } = trpc.methodology.getProjectMethodology.useQuery(
+    { projectId },
+    { enabled: !!projectId }
+  );
+  const setMethodology = trpc.methodology.setProjectMethodology.useMutation({
+    onSuccess: () => {
+      utils.methodology.getProjectMethodology.invalidate({ projectId });
+    },
+  });
+
   return (
     <div className="space-y-8">
       <section>
         <AttentionWidget workspaceId={workspaceId} projectId={projectId} />
       </section>
+      {methodologies && methodologies.length > 0 && (
+        <section className="p-4 border rounded-lg bg-muted/30">
+          <h2 className="text-sm font-semibold mb-2">Methodology</h2>
+          <select
+            value={projectMethodology?.id ?? ""}
+            onChange={(e) => {
+              const id = e.target.value || null;
+              setMethodology.mutate({ projectId, methodologyId: id });
+            }}
+            className="px-3 py-2 border rounded-lg bg-background text-sm"
+          >
+            <option value="">Default (Scrum)</option>
+            {methodologies.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          {projectMethodology && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Terminology: {projectMethodology.config.terminology.pack}, {projectMethodology.config.terminology.baseline}
+            </p>
+          )}
+        </section>
+      )}
       {project?.forwardingEmail && (
         <section>
           <EmailForwardingCard
@@ -276,6 +321,81 @@ export function ProjectPageClient({
             />
           </div>
         )}
+      </section>
+
+      <section>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            Evidence
+            {evidenceStats && evidenceStats.total > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded bg-muted">
+                {evidenceStats.total} items
+              </span>
+            )}
+            {unresolvedConflicts > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                {unresolvedConflicts} conflict{unresolvedConflicts !== 1 ? "s" : ""}
+              </span>
+            )}
+          </h2>
+          <Link
+            href={`/workspace/${workspaceId}/projects/${projectId}/evidence`}
+            className="px-4 py-2 border rounded-lg hover:bg-muted flex items-center gap-2 text-sm"
+          >
+            <FileSearch className="h-4 w-4" />
+            View Evidence Ledger
+          </Link>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          AI-classified evidence from your sources. View requirements, decisions, commitments and more.
+        </p>
+      </section>
+
+      <section>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Integrations</h2>
+          <Link
+            href={`/workspace/${workspaceId}/projects/${projectId}/integrations`}
+            className="px-4 py-2 border rounded-lg hover:bg-muted flex items-center gap-2 text-sm"
+          >
+            View Integrations
+          </Link>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Sync status, push history, and re-push changed stories to Monday.com
+          and Jira.
+        </p>
+      </section>
+
+      <section>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Team</h2>
+          <Link
+            href={`/workspace/${workspaceId}/projects/${projectId}/team`}
+            className="px-4 py-2 border rounded-lg hover:bg-muted flex items-center gap-2 text-sm"
+          >
+            Manage Team
+          </Link>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Assign project roles: Contributor, Reviewer, Viewer, Approver.
+        </p>
+      </section>
+
+      <section>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Change Requests</h2>
+          <Link
+            href={`/workspace/${workspaceId}/projects/${projectId}/change-requests`}
+            className="px-4 py-2 border rounded-lg hover:bg-muted flex items-center gap-2 text-sm"
+          >
+            View Change Requests
+          </Link>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Track changes triggered by source updates. Create baselines to enable
+          automatic change request creation.
+        </p>
       </section>
 
       <section>

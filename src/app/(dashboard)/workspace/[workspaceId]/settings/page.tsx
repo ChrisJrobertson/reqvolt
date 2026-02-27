@@ -62,6 +62,30 @@ export default async function WorkspaceSettingsPage({
           </Link>
         </section>
 
+        <section>
+          <Link
+            href={`/workspace/${workspaceId}/settings/data-governance`}
+            className="block p-4 border rounded-lg hover:bg-muted/50"
+          >
+            <h2 className="font-semibold">Data Governance</h2>
+            <p className="text-sm text-muted-foreground">
+              Retention policies, SAR export, deletion controls, and recovery
+            </p>
+          </Link>
+        </section>
+
+        <section>
+          <Link
+            href={`/workspace/${workspaceId}/settings/compliance`}
+            className="block p-4 border rounded-lg hover:bg-muted/50"
+          >
+            <h2 className="font-semibold">Security & Compliance</h2>
+            <p className="text-sm text-muted-foreground">
+              Legal hold, compliance export, session management, SSO
+            </p>
+          </Link>
+        </section>
+
         <MondaySettings workspaceId={workspaceId} />
         <section>
           <ApiKeyManagement />

@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { router, workspaceProcedure } from "../trpc";
+import { requireProjectRole } from "../trpc";
 import { SourceType } from "@prisma/client";
 import { db } from "../db";
 import { sourceService } from "../services/source";
 import { auditService } from "../services/audit";
+import { assertNoLegalHoldForSource } from "../lib/legal-hold";
 
 const sourceTypeSchema = z.nativeEnum(SourceType);
 
@@ -30,6 +32,10 @@ export const sourceRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireProjectRole(ctx.workspaceId, ctx.userId, input.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       const source = await sourceService.createText(
         ctx.workspaceId,
         input.projectId,
@@ -54,6 +60,10 @@ export const sourceRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireProjectRole(ctx.workspaceId, ctx.userId, input.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       const source = await sourceService.createEmail(
         ctx.workspaceId,
         input.projectId,
@@ -112,6 +122,16 @@ export const sourceRouter = router({
   delete: workspaceProcedure
     .input(z.object({ sourceId: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const source = await db.source.findFirst({
+        where: { id: input.sourceId, workspaceId: ctx.workspaceId },
+        select: { projectId: true },
+      });
+      if (!source) throw new Error("Source not found");
+      await assertNoLegalHoldForSource(input.sourceId);
+      await requireProjectRole(ctx.workspaceId, ctx.userId, source.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       await sourceService.softDelete(input.sourceId, ctx.workspaceId);
       await auditService.log({
         workspaceId: ctx.workspaceId,

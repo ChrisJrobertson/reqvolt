@@ -2,6 +2,7 @@ import { inngest } from "../client";
 import { db } from "@/server/db";
 import { chunkText } from "@/lib/chunking";
 import { embedText } from "@/server/services/embedding";
+import { classifyChunks } from "@/server/services/evidence-classification";
 import { randomUUID } from "crypto";
 
 export const chunkAndEmbed = inngest.createFunction(
@@ -81,6 +82,18 @@ export const chunkAndEmbed = inngest.createFunction(
     }
 
     const projId = projectId ?? source.projectId;
+
+    // Classify new chunks asynchronously (non-blocking)
+    const chunksToClassify = await db.sourceChunk.findMany({
+      where: { id: { in: newChunkIds } },
+      select: { id: true, content: true },
+    });
+    if (chunksToClassify.length > 0) {
+      void classifyChunks(
+        chunksToClassify.map((c) => ({ id: c.id, content: c.content })),
+        workspaceId
+      ).catch((err) => console.error("[chunk-and-embed] Classification failed:", err));
+    }
 
     if (replace && newVersionId && previousVersionId) {
       await step.sendEvent("trigger-detect-changes", {

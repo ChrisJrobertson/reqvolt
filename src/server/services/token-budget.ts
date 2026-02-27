@@ -2,18 +2,8 @@
  * Token budget tracking per workspace per month.
  * Uses Redis when REDIS_URL is set; skips check otherwise.
  */
-import Redis from "ioredis";
+import { getRedis } from "@/lib/redis";
 import { env } from "@/lib/env";
-
-let _redis: Redis | null = null;
-
-function getRedis(): Redis | null {
-  if (_redis) return _redis;
-  const url = env.REDIS_URL;
-  if (!url) return null;
-  _redis = new Redis(url);
-  return _redis;
-}
 
 export async function getCurrentTokenTotal(workspaceId: string): Promise<number> {
   const redis = getRedis();

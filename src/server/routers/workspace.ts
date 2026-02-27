@@ -20,6 +20,14 @@ export const workspaceRouter = router({
     return { role: ctx.member.role };
   }),
 
+  getMembers: workspaceProcedure.query(async ({ ctx }) => {
+    const members = await db.workspaceMember.findMany({
+      where: { workspaceId: ctx.workspaceId },
+      select: { userId: true, email: true, role: true },
+    });
+    return members;
+  }),
+
   create: protectedProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {

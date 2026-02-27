@@ -6,21 +6,10 @@ import {
   immediateNotificationText,
 } from "@/lib/email-templates";
 import { clerkClient } from "@clerk/nextjs/server";
-import Redis from "ioredis";
-import { env } from "@/lib/env";
+import { getRedis } from "@/lib/redis";
 
 const RATE_LIMIT = 10;
 const RATE_WINDOW_SEC = 3600;
-
-let _redis: Redis | null = null;
-
-function getRedis(): Redis | null {
-  if (_redis) return _redis;
-  const url = env.REDIS_URL;
-  if (!url) return null;
-  _redis = new Redis(url);
-  return _redis;
-}
 
 export const sendImmediateEmail = inngest.createFunction(
   { id: "send-immediate-email", retries: 2 },

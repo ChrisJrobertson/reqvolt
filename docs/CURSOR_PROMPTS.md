@@ -1192,3 +1192,259 @@ After completing all 12 prompts, run through this validation:
 ```bash
 pnpm verify  # Must pass: lint + typecheck + test + build
 ```
+
+---
+
+## Pre-Launch UX Prompts
+
+These two prompts are independent of the gap-closure sequence above. They can be built at any point and should be prioritised before launch. They address the two highest-impact UX improvements identified during product review.
+
+---
+
+## Prompt 13: Inline AI Actions on Stories and Acceptance Criteria
+
+**Branch:** `pre-launch/inline-ai-actions`
+**Commit prefix:** `feat(inline-ai):`
+
+### Context Files
+- `src/server/routers/pack.ts` (updateStory, updateAcceptanceCriteria, addStory mutations)
+- `src/server/services/generation.ts` (Anthropic API patterns, model routing)
+- `src/server/prompts/generation-system.ts` (system prompt for context on tone/rules)
+- `src/components/pack-editor/pack-editor.tsx` (current editor UI)
+- `src/lib/ai/model-router.ts` (getModelForTask, trackModelUsage)
+
+### Prompt — Copy into Cursor Composer
+
+```
+Read docs/BUILD_INSTRUCTIONS.md and docs/PROMPT_STRATEGY.md first.
+
+The existing pack editor (src/components/pack-editor/pack-editor.tsx) displays stories with persona/want/soThat and acceptance criteria with given/when/then. The pack router (src/server/routers/pack.ts) already has updateStory, updateAcceptanceCriteria, addStory, and deleteStory mutations. The Anthropic SDK is already initialised in src/server/services/generation.ts.
+
+I need inline AI actions that let consultants refine individual stories and ACs without regenerating the entire pack. This turns the editor from a one-shot generator into a collaborative workspace.
+
+1. **AI refinement service** — new file src/server/services/story-refine.ts:
+
+   Import the Anthropic SDK and model-router patterns from the existing generation service.
+
+   The service should export these functions, each calling Claude with a focused prompt and returning the refined content:
+
+   a) `refineStory(storyId: string, action: StoryAction, context?: string): Promise<RefinedStory>`
+      - Actions: "regenerate", "simplify", "elaborate", "split"
+      - For "regenerate": fetch the story's evidence links (SourceChunks), send them plus the current story to Claude with: "Rewrite this user story based on the evidence. Keep the same scope but improve clarity and testability. Return JSON: { persona, want, soThat, acceptanceCriteria: [{ given, when, then }] }."
+      - For "simplify": "Simplify this story. Remove jargon, shorten ACs, make it accessible to non-technical stakeholders. Preserve the meaning."
+      - For "elaborate": "Expand this story with more detailed acceptance criteria. Add edge cases, error scenarios, and boundary conditions based on the evidence provided."
+      - For "split": "This story is too large for a single sprint. Split it into 2-3 smaller, independently deliverable stories. Each must have its own ACs. Return JSON array of stories."
+      - context parameter: optional free-text instruction from the user ("make the ACs more specific about error handling")
+
+   b) `refineAC(acId: string, action: ACAction, context?: string): Promise<RefinedAC>`
+      - Actions: "rewrite", "make_testable", "add_edge_cases"
+      - For "rewrite": "Rewrite this acceptance criterion to be clearer and more testable. Given/When/Then format."
+      - For "make_testable": "This AC may be vague or untestable. Rewrite it so a QA tester could verify it without any additional context. Be specific about inputs, actions, and expected outputs."
+      - For "add_edge_cases": "Generate 2-3 additional ACs that cover edge cases and error scenarios for the same behaviour as this AC."
+
+   c) `suggestMissingACs(storyId: string): Promise<SuggestedAC[]>`
+      - Fetch the story and its evidence links
+      - Prompt: "Based on the evidence and the existing acceptance criteria, identify gaps. What scenarios, edge cases, or requirements are mentioned in the evidence but not covered by any existing AC? Return JSON array of suggested ACs with { given, when, then, reasoning }."
+
+   All functions must:
+   - Use getModelForTask("story_refinement") — fall back to "claude-sonnet-4-20250514" if no task mapping exists
+   - Track token usage via trackModelUsage with task: "story_refinement"
+   - Include the existing story's evidence links as context in every prompt
+   - Use the generation system prompt's rules about UK English, evidence-first, no fabricated specifics
+   - Return structured JSON matching the existing Story/AC interfaces
+   - Handle parse failures gracefully (return null with error message, don't throw)
+
+2. **Refinement router** — add to src/server/routers/pack.ts (or new file src/server/routers/story-refine.ts):
+
+   - `refineStory` mutation:
+     - Input: { storyId: string, action: "regenerate" | "simplify" | "elaborate" | "split", context?: string }
+     - Validate workspaceId ownership and Contributor/admin project role
+     - Call refineStory() service
+     - For "split": create new Story records, soft-delete original, link evidence to new stories
+     - For others: update the existing Story and its ACs with the refined content
+     - Track the original content in metadata for undo (store in AuditLog metadata as { before: {...} })
+     - Mark pack as diverged from baseline
+     - Log to AuditLog: action "story_refined", metadata: { action, storyId }
+
+   - `refineAC` mutation:
+     - Input: { acId: string, action: "rewrite" | "make_testable" | "add_edge_cases", context?: string }
+     - For "add_edge_cases": create new AC records on the same story
+     - For others: update the existing AC
+     - Mark pack as diverged from baseline
+     - Log to AuditLog
+
+   - `suggestMissingACs` query:
+     - Input: { storyId: string }
+     - Return suggested ACs (not yet persisted — user chooses which to accept)
+
+   - `acceptSuggestedAC` mutation:
+     - Input: { storyId: string, given: string, when: string, then: string }
+     - Creates a new AC record on the story
+     - Log to AuditLog
+
+   Register in _app.ts if using a new router file.
+
+3. **Inline AI action UI** — update src/components/pack-editor/pack-editor.tsx:
+
+   For each story card in the editor:
+   - Add a small "AI" button (sparkle icon from lucide-react) in the story header toolbar
+   - On click: show a dropdown menu with actions:
+     - "Regenerate from evidence" — calls refineStory with action "regenerate"
+     - "Simplify" — calls refineStory with action "simplify"
+     - "Elaborate (add edge cases)" — calls refineStory with action "elaborate"
+     - "Split into smaller stories" — calls refineStory with action "split"
+     - "Suggest missing ACs" — calls suggestMissingACs
+     - Divider
+     - "Custom instruction…" — opens a small text input where the user types a free-text instruction, then calls refineStory with action "regenerate" and the instruction as context
+   - While processing: show a subtle loading spinner on the story card, disable editing
+   - After processing:
+     - Show a diff preview: highlight what changed (green for additions, red for removals)
+     - "Accept" and "Revert" buttons
+     - Accept: persists the changes (mutations already called)
+     - Revert: calls updateStory with the original content from the audit log metadata
+   - For "split": show the proposed new stories in a modal, let the user confirm or cancel
+   - For "suggest missing ACs": show suggestions below the existing ACs with "Add" buttons next to each
+
+   For each acceptance criterion:
+   - Add a small AI icon button inline
+   - Dropdown: "Rewrite", "Make testable", "Add edge cases"
+   - Same diff preview pattern as stories
+
+4. **Undo support:**
+   - After any AI refinement, show a toast: "Story refined — Undo" with a 10-second undo window
+   - Undo reverts to the pre-refinement content stored in the AuditLog metadata
+   - After 10 seconds, the toast dismisses and the change is permanent
+
+5. **Rate limiting:**
+   - Max 20 inline AI actions per user per hour (prevent runaway API costs)
+   - Show remaining count in the AI action dropdown: "15 refinements remaining this hour"
+   - When limit reached: disable AI buttons, show "Limit reached — resets in X minutes"
+
+6. **Tests:**
+   - src/tests/server/services/story-refine.test.ts:
+     - Test each action with mocked Anthropic response
+     - Test JSON parse failure returns null gracefully
+     - Test evidence context is included in prompts
+   - src/tests/server/routers/story-refine.test.ts:
+     - Test split creates new stories and soft-deletes original
+     - Test undo via audit log metadata
+     - Test rate limiting
+
+Run pnpm verify when done.
+```
+
+### Test Before Moving On
+- Click the AI button on a story → "Regenerate from evidence" — does the story update with evidence-grounded content?
+- Click "Simplify" on a verbose story — is the result clearer and shorter?
+- Click "Split" on a large story — does it propose 2-3 smaller stories in a confirmation modal?
+- Click "Suggest missing ACs" — do reasonable suggestions appear with "Add" buttons?
+- Type a custom instruction ("focus on error handling") — does the regeneration follow it?
+- Click "Undo" within 10 seconds — does the story revert?
+- Fire 20 refinements rapidly — does rate limiting kick in?
+- On an AC, click "Make testable" — is the result more specific and verifiable?
+
+---
+
+## Prompt 14: Source Readiness Gate on Pack Generation
+
+**Branch:** `pre-launch/source-readiness-gate`
+**Commit prefix:** `feat(readiness-gate):`
+
+### Context Files
+- `src/server/services/source-readiness.ts` (existing readiness assessment)
+- `src/components/pack/SourceReadinessPanel.tsx` (existing panel component)
+- `src/server/routers/pack.ts` (generate mutation + assessReadiness query)
+- `src/app/(dashboard)/workspace/[workspaceId]/projects/[projectId]/project-page-client.tsx`
+
+### Prompt — Copy into Cursor Composer
+
+```
+Read docs/BUILD_INSTRUCTIONS.md and docs/PROMPT_STRATEGY.md first.
+
+The codebase already has a source readiness assessment service (src/server/services/source-readiness.ts) and a SourceReadinessPanel component (src/components/pack/SourceReadinessPanel.tsx). The service returns a ReadinessReport with overallStatus ("ready", "warnings", "blocked"), individual checks, topic coverage, estimated story count, and estimated generation time. The panel component already calls trpc.pack.assessReadiness.
+
+The problem: this panel is currently shown INSIDE the pack editor after generation, but it needs to be a GATE BEFORE generation. Consultants should see readiness feedback while selecting sources, before they hit "Generate". This prevents garbage-in-garbage-out and reduces wasted AI credits on thin source material.
+
+1. **Enhance the source readiness service** — update src/server/services/source-readiness.ts:
+
+   Add two new checks to the existing checks array:
+
+   a) "Stakeholder diversity" check:
+      - Analyse the source types: are there sources from multiple perspectives? (e.g., meeting notes + customer feedback + technical docs)
+      - If all sources are the same type (e.g., 5 meeting notes and nothing else): warning "All sources are the same type. Consider adding customer feedback, technical documentation, or stakeholder emails for richer stories."
+      - If sources include 3+ different types: pass
+
+   b) "Decision-maker input" check:
+      - Use the existing classificationTag data on SourceChunks
+      - Count chunks tagged as DECISION and COMMITMENT
+      - If zero decisions and zero commitments across all sources: warning "No decisions or commitments found in the source material. Stories may lack clear direction. Consider adding outputs from decision-making sessions or stakeholder sign-offs."
+      - If at least 2 decisions or commitments: pass
+
+   Add a new field to ReadinessReport:
+   - `recommendations: string[]` — actionable suggestions for improving source quality
+   - Populate based on failed/warning checks. Each recommendation should be specific and actionable:
+     - "Add a source from a different stakeholder perspective (e.g., end-user feedback, technical team notes)"
+     - "Your sources mention performance requirements but no specific thresholds — consider adding a technical specification document"
+     - "3 of your 5 sources are over 60 days old — check if newer information is available"
+
+2. **Pre-generation readiness flow** — update the project page where pack generation is initiated:
+
+   Look at src/app/(dashboard)/workspace/[workspaceId]/projects/[projectId]/project-page-client.tsx and the pack generation flow. The current flow is likely: select sources → click generate → wait. Change it to:
+
+   a) **Step 1: Select sources** (existing)
+      - Checkboxes next to each source in the project
+
+   b) **Step 2: Readiness check** (new, shown automatically when ≥1 source selected)
+      - Show the SourceReadinessPanel below the source list
+      - The panel should display:
+        - Overall status badge: green "Ready to generate", amber "Warnings — review before generating", red "Blocked — resolve issues first"
+        - Individual check cards with pass/warning/blocked icons and messages
+        - Topic coverage section: show discovered topics with depth indicators (detailed/moderate/minimal) as colour-coded pills
+        - Recommendations section: actionable bulleted suggestions
+        - Estimated output: "This will generate approximately X stories with Y acceptance criteria"
+        - Estimated processing time: "Generation will take approximately Z seconds"
+
+   c) **Step 3: Generate** (existing, but now gated)
+      - If overallStatus is "ready": "Generate Story Pack" button is enabled with green styling
+      - If overallStatus is "warnings": button shows as amber with text "Generate with Warnings" — clicking shows a confirmation: "The following issues may affect output quality: [list warnings]. Generate anyway?"
+      - If overallStatus is "blocked": button is disabled with red styling and text "Resolve Issues to Generate"
+      - Blocked reasons should be clear and specific (never just "cannot generate")
+
+3. **Quick-fix actions on readiness checks:**
+   - For "Source freshness" warnings: show a "View stale sources" link that highlights the aged sources in the list
+   - For "Minimum chunk count" blocks: show "Your sources haven't been processed yet" with a "Check processing status" link
+   - For "Stakeholder diversity" warnings: show "Add more sources" button that opens the source upload modal
+   - For "Decision-maker input" warnings: show "Forward decision emails" with the project's inbound email address and a copy button
+
+4. **Readiness in the pack editor header:**
+   - After generation, show a compact readiness summary in the pack header:
+     - "Generated from X sources — Evidence coverage: Y% — Source readiness: [status badge]"
+   - If the user adds new sources to the project after generation, show a subtle prompt: "New sources available — Refresh pack to include them"
+
+5. **Update the generation mutation** in src/server/routers/pack.ts:
+   - Before calling generatePack(), run assessSourceReadiness()
+   - If status is "blocked": throw a descriptive error (don't silently generate from poor sources)
+   - If status is "warnings": allow generation but store the warnings in the PackVersion's generationConfig metadata
+   - This is a server-side safety net — the UI gate handles most cases, but the API should also enforce it
+
+6. **Tests:**
+   - src/tests/server/services/source-readiness.test.ts (update existing):
+     - Test stakeholder diversity check with mixed vs. uniform source types
+     - Test decision-maker input check with/without DECISION/COMMITMENT chunks
+     - Test recommendations are populated for each warning
+   - src/tests/server/routers/pack.test.ts:
+     - Test that generation is blocked when readiness is "blocked"
+     - Test that warnings are stored in generationConfig
+
+Run pnpm verify when done.
+```
+
+### Test Before Moving On
+- Select a single short source — does the readiness panel show warnings about limited material?
+- Select sources of all the same type — does the stakeholder diversity warning appear?
+- Select sources with no decisions/commitments — does the decision-maker input warning appear?
+- Are the recommendations specific and actionable (not generic)?
+- With a "blocked" assessment — is the Generate button truly disabled?
+- With "warnings" — does the confirmation dialog show the specific issues?
+- After generation — does the pack header show the readiness summary?
+- Does the server-side gate block generation from the API even without the UI?

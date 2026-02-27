@@ -4,8 +4,7 @@
  */
 import { db } from "../db";
 import { inngest } from "../inngest/client";
-import Redis from "ioredis";
-import { env } from "@/lib/env";
+import { getRedis } from "@/lib/redis";
 
 export type NotificationType =
   | "source_changed"
@@ -13,7 +12,8 @@ export type NotificationType =
   | "delivery_feedback"
   | "health_degraded"
   | "email_ingested"
-  | "sync_error";
+  | "sync_error"
+  | "change_request_created";
 
 export type PreferenceKey =
   | "notifySourceChanges"
@@ -38,16 +38,6 @@ const DEFAULT_PREFERENCES = {
   notifyHealthDegraded: true,
   notifyEmailIngested: true,
 };
-
-let _redis: Redis | null = null;
-
-function getRedis(): Redis | null {
-  if (_redis) return _redis;
-  const url = env.REDIS_URL;
-  if (!url) return null;
-  _redis = new Redis(url);
-  return _redis;
-}
 
 export async function createNotificationsForWorkspace(
   params: CreateNotificationParams

@@ -13,13 +13,15 @@ export type LlmTaskType =
   | "self_review"
   | "topic_extraction"
   | "coherence_check"
-  | "impact_summary";
+  | "impact_summary"
+  | "evidence_classification";
 
 export function getModelForTask(taskType: LlmTaskType): string {
   switch (taskType) {
     case "topic_extraction":
     case "coherence_check":
     case "impact_summary":
+    case "evidence_classification":
       return env.CLAUDE_HAIKU_MODEL;
     case "pack_generation":
     case "qa_autofix":
@@ -34,7 +36,7 @@ export function isGenerationTierTask(taskType: LlmTaskType): boolean {
 }
 
 export function isAnalysisTierTask(taskType: LlmTaskType): boolean {
-  return ["topic_extraction", "coherence_check", "impact_summary"].includes(taskType);
+  return ["topic_extraction", "coherence_check", "impact_summary", "evidence_classification"].includes(taskType);
 }
 
 /**

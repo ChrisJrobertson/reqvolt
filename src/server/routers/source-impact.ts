@@ -74,6 +74,63 @@ export const sourceImpactRouter = router({
       return { acknowledged: true };
     }),
 
+  getImpactReport: workspaceProcedure
+    .input(z.object({ packId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const pack = await db.pack.findFirst({
+        where: { id: input.packId, workspaceId: ctx.workspaceId },
+      });
+      if (!pack) throw new Error("Pack not found");
+
+      const impacts = await db.sourceChangeImpact.findMany({
+        where: { packId: input.packId, isAcknowledged: false },
+        include: { source: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const sourceIds = new Set(impacts.map((i) => i.sourceId));
+      const allStoryIds = new Set<string>();
+      for (const i of impacts) {
+        for (const sid of i.affectedStoryIds) allStoryIds.add(sid);
+      }
+      const evidenceCount = impacts.reduce((s, i) => s + i.affectedAcCount + i.affectedStoryCount, 0);
+
+      const stories =
+        allStoryIds.size > 0
+          ? await db.story.findMany({
+              where: { id: { in: Array.from(allStoryIds) }, deletedAt: null },
+              select: { id: true, want: true, persona: true },
+            })
+          : [];
+
+      const storyMap = new Map(stories.map((s) => [s.id, s]));
+      const impactsByStory = new Map<string, { sourceName: string; impactSummary?: string }[]>();
+      for (const i of impacts) {
+        for (const sid of i.affectedStoryIds) {
+          const list = impactsByStory.get(sid) ?? [];
+          list.push({
+            sourceName: i.source?.name ?? "Unknown",
+            impactSummary: i.impactSummary ?? undefined,
+          });
+          impactsByStory.set(sid, list);
+        }
+      }
+
+      return {
+        sourcesChanged: sourceIds.size,
+        evidenceItemsAffected: evidenceCount,
+        storiesImpacted: allStoryIds.size,
+        impacts,
+        stories: Array.from(allStoryIds).map((id) => ({
+          id,
+          want: storyMap.get(id)?.want ?? "",
+          persona: storyMap.get(id)?.persona ?? "",
+          impacts: impactsByStory.get(id) ?? [],
+        })),
+        hasBaseline: !!pack.lastBaselineId,
+      };
+    }),
+
   acknowledgeAll: workspaceProcedure
     .input(z.object({ packId: z.string() }))
     .mutation(async ({ ctx, input }) => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { router, workspaceProcedure, publicProcedure } from "../trpc";
+import { requireProjectRole } from "../trpc";
 import { db } from "../db";
 import { HealthStatus } from "@prisma/client";
 import { generatePack } from "../services/generation";
@@ -9,18 +10,8 @@ import { runQARules } from "../services/qa-rules";
 import { auditService } from "../services/audit";
 import { computeAndPersistPackHealth } from "../services/health";
 import { inngest } from "../inngest/client";
-import Redis from "ioredis";
-import { env } from "@/lib/env";
+import { getRedis } from "@/lib/redis";
 import crypto from "node:crypto";
-
-let _redis: Redis | null = null;
-function getRedis(): Redis | null {
-  if (_redis) return _redis;
-  const url = env.REDIS_URL;
-  if (!url) return null;
-  _redis = new Redis(url);
-  return _redis;
-}
 
 async function checkHealthRefreshRateLimit(packId: string): Promise<boolean> {
   const redis = getRedis();
@@ -34,6 +25,26 @@ async function checkHealthRefreshRateLimit(packId: string): Promise<boolean> {
 
 function hashSourceIds(sourceIds: string[]): string {
   return crypto.createHash("sha256").update(sourceIds.sort().join(",")).digest("hex").slice(0, 16);
+}
+
+async function markPackDiverged(packId: string): Promise<void> {
+  const pack = await db.pack.findFirst({
+    where: { id: packId },
+    select: { lastBaselineId: true },
+  });
+  if (pack?.lastBaselineId) {
+    await db.pack.update({
+      where: { id: packId },
+      data: { divergedFromBaseline: true },
+    });
+  }
+}
+
+async function markStoryExportsChanged(storyId: string): Promise<void> {
+  await db.storyExport.updateMany({
+    where: { storyId },
+    data: { changedSincePush: true },
+  });
 }
 
 export const packRouter = router({
@@ -294,6 +305,10 @@ export const packRouter = router({
         where: { id: input.packId, workspaceId: ctx.workspaceId },
       });
       if (!pack) throw new Error("Pack not found");
+      await requireProjectRole(ctx.workspaceId, ctx.userId, pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
 
       const result = await generatePack({
         projectId: pack.projectId,
@@ -331,6 +346,10 @@ export const packRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await requireProjectRole(ctx.workspaceId, ctx.userId, input.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       const result = await generatePack({
         projectId: input.projectId,
         workspaceId: ctx.workspaceId,
@@ -373,6 +392,10 @@ export const packRouter = router({
       if (!story || story.packVersion.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Story not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, story.packVersion.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       await db.story.update({
         where: { id: input.storyId },
         data: {
@@ -381,6 +404,8 @@ export const packRouter = router({
           ...(input.soThat !== undefined && { soThat: input.soThat }),
         },
       });
+      await markPackDiverged(story.packVersion.pack.id);
+      await markStoryExportsChanged(input.storyId);
       return { packVersionId: story.packVersionId };
     }),
 
@@ -401,6 +426,10 @@ export const packRouter = router({
       if (!ac || ac.story.packVersion.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Acceptance criteria not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, ac.story.packVersion.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       await db.acceptanceCriteria.update({
         where: { id: input.acId },
         data: {
@@ -409,6 +438,8 @@ export const packRouter = router({
           ...(input.then !== undefined && { then: input.then }),
         },
       });
+      await markPackDiverged(ac.story.packVersion.pack.id);
+      await markStoryExportsChanged(ac.storyId);
       return { packVersionId: ac.story.packVersionId };
     }),
 
@@ -422,12 +453,17 @@ export const packRouter = router({
       if (!version || version.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Pack version not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, version.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       for (let i = 0; i < input.storyIds.length; i++) {
         await db.story.update({
           where: { id: input.storyIds[i] },
           data: { sortOrder: i },
         });
       }
+      await markPackDiverged(version.pack.id);
       return { packVersionId: input.packVersionId };
     }),
 
@@ -446,12 +482,17 @@ export const packRouter = router({
       if (!story || story.packVersion.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Story not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, story.packVersion.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       for (let i = 0; i < input.acIds.length; i++) {
         await db.acceptanceCriteria.update({
           where: { id: input.acIds[i] },
           data: { sortOrder: i },
         });
       }
+      await markPackDiverged(story.packVersion.pack.id);
       return { packVersionId: story.packVersionId };
     }),
 
@@ -472,6 +513,10 @@ export const packRouter = router({
       if (!version || version.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Pack version not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, version.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       const maxOrder = await db.story
         .aggregate({
           where: { packVersionId: input.packVersionId, deletedAt: null },
@@ -487,6 +532,7 @@ export const packRouter = router({
           soThat: input.soThat,
         },
       });
+      await markPackDiverged(version.pack.id);
       return { story, packVersionId: input.packVersionId };
     }),
 
@@ -507,6 +553,10 @@ export const packRouter = router({
       if (!story || story.packVersion.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Story not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, story.packVersion.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       const maxOrder = await db.acceptanceCriteria
         .aggregate({
           where: { storyId: input.storyId, deletedAt: null },
@@ -522,6 +572,8 @@ export const packRouter = router({
           then: input.then,
         },
       });
+      await markPackDiverged(story.packVersion.pack.id);
+      await markStoryExportsChanged(input.storyId);
       return { ac, packVersionId: story.packVersionId };
     }),
 
@@ -535,10 +587,15 @@ export const packRouter = router({
       if (!story || story.packVersion.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Story not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, story.packVersion.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       await db.story.update({
         where: { id: input.storyId },
         data: { deletedAt: new Date() },
       });
+      await markPackDiverged(story.packVersion.pack.id);
       return { packVersionId: story.packVersionId };
     }),
 
@@ -552,10 +609,16 @@ export const packRouter = router({
       if (!ac || ac.story.packVersion.pack.workspaceId !== ctx.workspaceId) {
         throw new Error("Acceptance criteria not found");
       }
+      await requireProjectRole(ctx.workspaceId, ctx.userId, ac.story.packVersion.pack.projectId, [
+        "Contributor",
+        "admin",
+      ]);
       await db.acceptanceCriteria.update({
         where: { id: input.acId },
         data: { deletedAt: new Date() },
       });
+      await markPackDiverged(ac.story.packVersion.pack.id);
+      await markStoryExportsChanged(ac.storyId);
       return { packVersionId: ac.story.packVersionId };
     }),
 

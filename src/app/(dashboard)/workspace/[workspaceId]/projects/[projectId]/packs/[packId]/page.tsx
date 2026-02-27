@@ -27,6 +27,7 @@ export default async function PackPage({
     where: { id: packId, workspaceId },
     include: {
       project: true,
+      lastBaseline: { select: { versionLabel: true } },
       versions: {
         orderBy: { versionNumber: "desc" },
         include: {

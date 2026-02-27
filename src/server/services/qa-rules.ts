@@ -61,6 +61,11 @@ export async function runQARules(packVersionId: string): Promise<number> {
   const version = await db.packVersion.findFirst({
     where: { id: packVersionId },
     include: {
+      pack: {
+        include: {
+          project: { include: { methodology: true } },
+        },
+      },
       stories: {
         where: { deletedAt: null },
         orderBy: { sortOrder: "asc" },
@@ -76,6 +81,9 @@ export async function runQARules(packVersionId: string): Promise<number> {
 
   if (!version) throw new Error("Pack version not found");
 
+  const qaOverrides = (version.pack?.project?.methodology?.config as { qaRuleOverrides?: Record<string, { enabled: boolean }> })?.qaRuleOverrides ?? {};
+  const isRuleEnabled = (rule: string) => qaOverrides[rule]?.enabled !== false;
+
   await db.qAFlag.deleteMany({ where: { packVersionId } });
 
   let flagCount = 0;
@@ -83,6 +91,7 @@ export async function runQARules(packVersionId: string): Promise<number> {
   for (const story of version.stories) {
     const storyText = `${story.persona} ${story.want} ${story.soThat}`;
 
+    if (isRuleEnabled("VAGUE_TERM")) {
     for (const term of findVagueTerms(storyText)) {
       await db.qAFlag.create({
         data: {
@@ -96,7 +105,9 @@ export async function runQARules(packVersionId: string): Promise<number> {
       });
       flagCount++;
     }
+    }
 
+    if (isRuleEnabled("UNTESTABLE")) {
     for (const phrase of findUntestablePhrases(storyText)) {
       await db.qAFlag.create({
         data: {
@@ -110,10 +121,12 @@ export async function runQARules(packVersionId: string): Promise<number> {
       });
       flagCount++;
     }
+    }
 
     for (const ac of story.acceptanceCriteria) {
       const acText = `${ac.given} ${ac.when} ${ac.then}`;
 
+      if (isRuleEnabled("VAGUE_TERM")) {
       for (const term of findVagueTerms(acText)) {
         await db.qAFlag.create({
           data: {
@@ -127,7 +140,9 @@ export async function runQARules(packVersionId: string): Promise<number> {
         });
         flagCount++;
       }
+      }
 
+      if (isRuleEnabled("UNTESTABLE")) {
       for (const phrase of findUntestablePhrases(acText)) {
         await db.qAFlag.create({
           data: {
@@ -141,7 +156,9 @@ export async function runQARules(packVersionId: string): Promise<number> {
         });
         flagCount++;
       }
+      }
 
+      if (isRuleEnabled("MISSING_CLAUSE")) {
       if (checkMissingClause(ac.given, ac.when, ac.then)) {
         const missing: string[] = [];
         if (!ac.given?.trim()) missing.push("Given");
@@ -159,7 +176,9 @@ export async function runQARules(packVersionId: string): Promise<number> {
         });
         flagCount++;
       }
+      }
 
+      if (isRuleEnabled("OVERLOADED_AC")) {
       if (checkOverloadedAC(ac.given, ac.when, ac.then)) {
         await db.qAFlag.create({
           data: {
@@ -172,6 +191,7 @@ export async function runQARules(packVersionId: string): Promise<number> {
           },
         });
         flagCount++;
+      }
       }
     }
   }

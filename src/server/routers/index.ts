@@ -20,6 +20,15 @@ import { onboardingRouter } from "./onboarding";
 import { feedbackRouter } from "./feedback";
 import { adminQualityRouter } from "./admin-quality";
 import { aiProcessingLogRouter } from "./ai-processing-log";
+import { evidenceLedgerRouter } from "./evidence-ledger";
+import { approvalRouter } from "./approval";
+import { baselineRouter } from "./baseline";
+import { changeRequestRouter } from "./change-request";
+import { projectMemberRouter } from "./project-member";
+import { retentionRouter } from "./retention";
+import { portfolioRouter } from "./portfolio";
+import { methodologyRouter } from "./methodology";
+import { complianceRouter } from "./compliance";
 
 export const appRouter = router({
   workspace: workspaceRouter,
@@ -43,6 +52,15 @@ export const appRouter = router({
   feedback: feedbackRouter,
   adminQuality: adminQualityRouter,
   aiProcessingLog: aiProcessingLogRouter,
+  evidenceLedger: evidenceLedgerRouter,
+  approval: approvalRouter,
+  baseline: baselineRouter,
+  changeRequest: changeRequestRouter,
+  projectMember: projectMemberRouter,
+  retention: retentionRouter,
+  portfolio: portfolioRouter,
+  methodology: methodologyRouter,
+  compliance: complianceRouter,
 });
 
 export type AppRouter = typeof appRouter;

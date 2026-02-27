@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { trpc } from "@/lib/trpc";
 import { PackHeader } from "./pack-header";
 import { PackEditor } from "./pack-editor";
 import { PackHealthPanel } from "./pack-health-panel";
@@ -8,6 +9,7 @@ import { TraceabilityMini } from "@/components/pack/TraceabilityMini";
 import { GenerationConfidenceBar } from "@/components/pack/GenerationConfidenceBar";
 import { PackFeedbackPrompt } from "@/components/pack/PackFeedbackPrompt";
 import { SourceChangeImpactBanner } from "./SourceChangeImpactBanner";
+import { BaselinesPanel } from "./BaselinesPanel";
 
 interface Source {
   id: string;
@@ -111,6 +113,14 @@ export function PackPageClient({
   const latestVersion = displayPack.versions[0];
   const sourceIds = (latestVersion?.sourceIds as string[] | undefined) ?? [];
 
+  const { data: impactReport } = trpc.sourceImpact.getImpactReport.useQuery(
+    { packId: pack.id },
+    { enabled: !!pack.id }
+  );
+  const affectedStoryIds = new Set(
+    impactReport?.stories?.map((s) => s.id) ?? []
+  );
+
   return (
     <>
       <SourceChangeImpactBanner
@@ -144,12 +154,19 @@ export function PackPageClient({
           projectId={projectId}
         />
       </div>
+      <div className="mb-6">
+        <BaselinesPanel
+          packId={pack.id}
+          isApproved={(pack as { reviewStatus?: string }).reviewStatus === "approved"}
+        />
+      </div>
       <PackEditor
         pack={displayPack}
         evidenceMapByVersionId={evidenceMapByVersionId}
         selectedVersionIndex={selectedVersionIndex}
         workspaceId={workspaceId}
         projectId={projectId}
+        affectedStoryIds={affectedStoryIds}
       />
       <PackFeedbackPrompt packId={pack.id} />
     </>

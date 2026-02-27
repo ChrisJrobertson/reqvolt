@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
+import { ChangeImpactReport } from "@/components/change-request/ChangeImpactReport";
 
 interface SourceChangeImpactBannerProps {
   packId: string;
@@ -13,13 +15,12 @@ interface SourceChangeImpactBannerProps {
 
 export function SourceChangeImpactBanner({
   packId,
-  workspaceId: _workspaceId,
-  projectId: _projectId,
+  workspaceId,
+  projectId,
   sourceIds,
   onRefresh,
 }: SourceChangeImpactBannerProps) {
-  void _workspaceId;
-  void _projectId;
+  const router = useRouter();
   const [showPanel, setShowPanel] = useState(false);
 
   const { data, isLoading, refetch } = trpc.sourceImpact.list.useQuery({
@@ -31,6 +32,8 @@ export function SourceChangeImpactBanner({
   const acknowledgeAll = trpc.sourceImpact.acknowledgeAll.useMutation({
     onSuccess: () => refetch(),
   });
+
+  const createCR = trpc.changeRequest.create.useMutation();
 
   const regenerate = trpc.pack.regenerate.useMutation({
     onSuccess: () => {
@@ -75,7 +78,7 @@ export function SourceChangeImpactBanner({
               onClick={() => setShowPanel(true)}
               className="px-3 py-1.5 border border-amber-600 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 text-sm font-medium"
             >
-              View Changes
+              View Impact Report
             </button>
             <button
               onClick={() => {
@@ -122,6 +125,28 @@ export function SourceChangeImpactBanner({
               </button>
             </div>
             <div className="p-4 space-y-4">
+              <ChangeImpactReport
+                packId={packId}
+                workspaceId={workspaceId}
+                projectId={projectId}
+                onCreateChangeRequest={(prefill) => {
+                  createCR.mutate(
+                    {
+                      projectId,
+                      packId,
+                      ...prefill,
+                    },
+                    {
+                      onSuccess: () => {
+                        setShowPanel(false);
+                        router.push(
+                          `/workspace/${workspaceId}/projects/${projectId}/change-requests`
+                        );
+                      },
+                    }
+                  );
+                }}
+              />
               {impacts.map((impact) => (
                 <div
                   key={impact.id}

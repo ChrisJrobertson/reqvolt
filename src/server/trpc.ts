@@ -8,7 +8,9 @@ import * as Sentry from "@sentry/nextjs";
 import { assertEnvValid } from "@/lib/env";
 import { getAuthUserId } from "@/lib/auth";
 import { db } from "./db";
-import { WorkspaceRole } from "@prisma/client";
+import { WorkspaceRole, ProjectRole } from "@prisma/client";
+
+export type ProjectRoleOrAdmin = ProjectRole | "admin";
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   assertEnvValid();
@@ -95,6 +97,41 @@ export const adminProcedure = workspaceProcedure.use(async ({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+/** Resolve project role for a user. Workspace Admin = full access (admin). */
+export async function getProjectRole(
+  workspaceId: string,
+  userId: string,
+  projectId: string
+): Promise<ProjectRoleOrAdmin> {
+  const wsMember = await db.workspaceMember.findFirst({
+    where: { workspaceId, userId },
+  });
+  if (wsMember?.role === WorkspaceRole.Admin) return "admin";
+
+  const pm = await db.projectMember.findUnique({
+    where: {
+      projectId_userId: { projectId, userId },
+    },
+  });
+  return pm?.role ?? "Viewer";
+}
+
+/** Throw FORBIDDEN if user's project role is not in allowed list. */
+export async function requireProjectRole(
+  workspaceId: string,
+  userId: string,
+  projectId: string,
+  allowedRoles: ProjectRoleOrAdmin[]
+): Promise<void> {
+  const role = await getProjectRole(workspaceId, userId, projectId);
+  if (!allowedRoles.includes(role)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Insufficient permissions for this project",
+    });
+  }
+}
 
 /** Platform-level admin: userId must be in ADMIN_USER_IDS env. Not workspace-scoped. */
 export const platformAdminProcedure = protectedProcedure.use(async ({ ctx, next }) => {

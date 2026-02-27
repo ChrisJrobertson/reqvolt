@@ -41,6 +41,12 @@ export function WorkspaceHeader({ workspaceId, workspaceName }: WorkspaceHeaderP
             </button>
             <NotificationBell workspaceId={workspaceId} />
             <Link
+              href={`/workspace/${workspaceId}/portfolio`}
+              className="text-sm text-muted-foreground hover:underline px-2"
+            >
+              Portfolio
+            </Link>
+            <Link
               href={`/workspace/${workspaceId}/settings`}
               className="text-sm text-muted-foreground hover:underline px-2"
             >

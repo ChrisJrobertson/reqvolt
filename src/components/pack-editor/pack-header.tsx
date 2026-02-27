@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
+import { ChevronDown } from "lucide-react";
 import { PackHealthBadge } from "./pack-health-badge";
 import { GitBranch } from "lucide-react";
 
@@ -26,6 +27,8 @@ interface Pack {
   versions: PackVersion[];
   healthScore?: number | null;
   healthStatus?: string | null;
+  reviewStatus?: string | null;
+  divergedFromBaseline?: boolean;
 }
 
 export function PackHeader({
@@ -132,6 +135,31 @@ export function PackHeader({
     },
   });
 
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approverName, setApproverName] = useState("");
+  const [approverEmail, setApproverEmail] = useState("");
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const createApproval = trpc.approval.create.useMutation({
+    onSuccess: (data) => {
+      void navigator.clipboard.writeText(data.approveUrl);
+      setShowApprovalModal(false);
+      setApproverName("");
+      setApproverEmail("");
+      window.location.reload();
+    },
+  });
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target as Node)) {
+        setShowExportDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareResult, setShareResult] = useState<{
     url: string;
@@ -190,13 +218,71 @@ export function PackHeader({
           <div className="ml-auto flex gap-2 flex-wrap">
             {selectedVersion && (
               <>
-                <a
-                  href={`/api/packs/${pack.id}/versions/${selectedVersion.id}/export`}
-                  className="px-4 py-2 border rounded-lg hover:bg-muted text-sm"
-                  download
-                >
-                  Export DOCX
-                </a>
+                <div className="relative" ref={exportDropdownRef}>
+                  <button
+                    onClick={() => setShowExportDropdown(!showExportDropdown)}
+                    className="px-4 py-2 border rounded-lg hover:bg-muted text-sm flex items-center gap-1"
+                  >
+                    Export <ChevronDown className="h-4 w-4" />
+                  </button>
+                  {showExportDropdown && (
+                    <div className="absolute top-full left-0 mt-1 py-1 bg-background border rounded-lg shadow-lg z-50 min-w-[200px]">
+                      <a
+                        href={`/api/packs/${pack.id}/versions/${selectedVersion.id}/export?format=docx`}
+                        className="block px-4 py-2 text-sm hover:bg-muted"
+                        download
+                        onClick={() => setShowExportDropdown(false)}
+                      >
+                        Word Document
+                      </a>
+                      <a
+                        href={`/api/packs/${pack.id}/versions/${selectedVersion.id}/export?format=csv`}
+                        className="block px-4 py-2 text-sm hover:bg-muted"
+                        download
+                        onClick={() => setShowExportDropdown(false)}
+                      >
+                        CSV Spreadsheet
+                      </a>
+                      <a
+                        href={`/api/packs/${pack.id}/versions/${selectedVersion.id}/export?format=html`}
+                        className="block px-4 py-2 text-sm hover:bg-muted"
+                        download
+                        onClick={() => setShowExportDropdown(false)}
+                      >
+                        Client Pack (HTML)
+                      </a>
+                      <a
+                        href={`/api/packs/${pack.id}/versions/${selectedVersion.id}/export?format=json`}
+                        className="block px-4 py-2 text-sm hover:bg-muted"
+                        download
+                        onClick={() => setShowExportDropdown(false)}
+                      >
+                        JSON Data
+                      </a>
+                    </div>
+                  )}
+                </div>
+                {(pack as { divergedFromBaseline?: boolean }).divergedFromBaseline && (
+            <Link
+              href={`/workspace/${workspaceId}/projects/${projectId}/packs/${pack.id}#baselines`}
+              className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 hover:bg-amber-200"
+            >
+              Pack changed since baseline
+            </Link>
+          )}
+          {pack.reviewStatus === "approved" && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">
+                    Pack approved
+                  </span>
+                )}
+                {selectedVersion && (
+                  <button
+                    onClick={() => setShowApprovalModal(true)}
+                    className="px-4 py-2 border rounded-lg hover:bg-muted text-sm"
+                  >
+                    Request approval
+                  </button>
+                )}
                 {reviewLink ? (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
@@ -561,6 +647,64 @@ export function PackHeader({
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50"
               >
                 {pushToMonday.isPending ? "Pushing..." : "Push"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApprovalModal && selectedVersion && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background rounded-lg shadow-lg max-w-md w-full mx-4 p-6">
+            <h2 className="text-xl font-semibold mb-4">Request approval</h2>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Approver name</label>
+                <input
+                  type="text"
+                  value={approverName}
+                  onChange={(e) => setApproverName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Approver email</label>
+                <input
+                  type="email"
+                  value={approverEmail}
+                  onChange={(e) => setApproverEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowApprovalModal(false)}
+                className="px-4 py-2 border rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (approverName.trim() && approverEmail.trim()) {
+                    createApproval.mutate({
+                      packId: pack.id,
+                      packVersionId: selectedVersion.id,
+                      approverName: approverName.trim(),
+                      approverEmail: approverEmail.trim(),
+                    });
+                  }
+                }}
+                disabled={
+                  createApproval.isPending ||
+                  !approverName.trim() ||
+                  !approverEmail.trim()
+                }
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50"
+              >
+                {createApproval.isPending ? "Sending…" : "Send request"}
               </button>
             </div>
           </div>

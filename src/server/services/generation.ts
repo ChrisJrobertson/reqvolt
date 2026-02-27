@@ -74,11 +74,17 @@ export async function generatePack(input: GeneratePackInput) {
       .join("\n");
   }
 
+  const project = await db.project.findFirst({
+    where: { id: projectId, workspaceId },
+    include: { methodology: true },
+  });
+
   const model = getModelForTask("pack_generation");
   const cacheKey = hashGenerationInputs({
     sourceIds,
     templateId,
     userNotes,
+    methodologyId: project?.methodologyId,
     model,
   });
 
@@ -100,6 +106,7 @@ export async function generatePack(input: GeneratePackInput) {
       templateContext,
       glossaryContext,
       userNotes,
+      methodology: project?.methodology?.config as import("../methodology/types").MethodologyConfigJson | undefined,
     });
 
     const start = Date.now();
@@ -151,9 +158,6 @@ export async function generatePack(input: GeneratePackInput) {
     await setCachedResponse(cacheKey, parsed);
   }
 
-  const project = await db.project.findFirst({
-    where: { id: projectId, workspaceId },
-  });
   if (!project) throw new Error("Project not found");
 
   let pack: { id: string };

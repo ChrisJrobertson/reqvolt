@@ -14,6 +14,7 @@ import { sendHealthDigestWeekly } from "@/server/inngest/functions/send-health-d
 import { sendImmediateEmail } from "@/server/inngest/functions/send-immediate-email";
 import { cleanupOldData } from "@/server/inngest/functions/cleanup-old-data";
 import { processInboundEmail } from "@/server/inngest/functions/process-inbound-email";
+import { detectConflictsJob } from "@/server/inngest/functions/detect-conflicts";
 
 export const handler = serve({
   client: inngest,
@@ -32,5 +33,6 @@ export const handler = serve({
     sendImmediateEmail,
     cleanupOldData,
     processInboundEmail,
+    detectConflictsJob,
   ],
 });

@@ -8,7 +8,7 @@ import { StoryDiscussionPanel } from "./StoryDiscussionPanel";
 import { StoryFeedbackToggle } from "@/components/pack/StoryFeedbackToggle";
 import { TranscriptEvidenceDisplay } from "./TranscriptEvidenceDisplay";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { FileText } from "lucide-react";
+import { FileText, Copy, AlertTriangle } from "lucide-react";
 
 interface EvidenceLink {
   id: string;
@@ -89,6 +89,7 @@ export function PackEditor({
   selectedVersionIndex = 0,
   workspaceId,
   projectId,
+  affectedStoryIds = new Set<string>(),
 }: {
   pack: Pack;
   evidenceMapByVersionId: Record<string, EvidenceMap>;
@@ -96,6 +97,7 @@ export function PackEditor({
   onVersionChange?: (index: number) => void;
   workspaceId?: string;
   projectId?: string;
+  affectedStoryIds?: Set<string>;
 }) {
   const router = useRouter();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -210,6 +212,20 @@ export function PackEditor({
   const showEvidence = (entityType: "story" | "acceptance_criteria", entityId: string) => {
     setEvidenceTab(entityType);
     setEvidenceEntityId(entityId);
+  };
+
+  const copyStoryToClipboard = (story: Story) => {
+    const acLines = story.acceptanceCriteria.map(
+      (ac) => `- [ ] Given ${ac.given} When ${ac.when} Then ${ac.then}`
+    );
+    const md = `**As a** ${story.persona}
+
+**I want** ${story.want}
+
+**So that** ${story.soThat}
+
+${acLines.length ? `**Acceptance Criteria**\n\n${acLines.join("\n")}` : ""}`;
+    void navigator.clipboard.writeText(md);
   };
 
   const currentEvidence =
@@ -353,7 +369,22 @@ export function PackEditor({
                     className="font-medium bg-transparent border-b border-transparent hover:border-muted focus:border-primary focus:outline-none w-full"
                     placeholder="As a..."
                   />
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex gap-2 shrink-0 items-center">
+                    {affectedStoryIds.has(story.id) && (
+                      <span
+                        className="text-amber-500"
+                        title="Affected by source changes"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </span>
+                    )}
+                    <button
+                      onClick={() => copyStoryToClipboard(story)}
+                      className="text-xs px-2 py-0.5 rounded hover:bg-muted text-muted-foreground"
+                      title="Copy story as markdown"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
                     {getQAFlagCount("story", story.id) > 0 && (
                       <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-800">
                         {getQAFlagCount("story", story.id)} QA
